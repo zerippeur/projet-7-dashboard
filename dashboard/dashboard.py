@@ -48,7 +48,7 @@ def plot_gauge(value, prediction):
     ax.set_axis_off()
     st.pyplot(fig)
 
-def display_result(prediction, confidence, risk_category):
+def display_credit_result(prediction, confidence, risk_category):
     font_color = risk_categories[risk_category]
     st.markdown(f"## Credit approval: <span style='color:{font_color}'>{risk_category}</span>", unsafe_allow_html=True)
 
@@ -60,30 +60,70 @@ st.set_page_config(
     page_title='Credit risk prediction', page_icon=':clipboard:', layout='wide'
 )
 
+# Function to get feature importance from API
+def get_global_feature_importance():
+    # Replace this URL with your actual API endpoint
+    api_url = "http://127.0.0.1:8000/global_feature_importance"
+    
+    
+    # Send POST request to API
+    response = requests.post(api_url)
+
+    if response.status_code == 200:
+        result = response.json()
+        return result
+    else:
+        st.error("Error fetching feature importance from API")
+        return None
+    
+def display_feature_importance(model_type, nb_features, importance_type):
+    st.markdown("### Feature importance")
+    if model_type == 'XGBClassifier':
+        feature_importance = st.session_state['feature_importance']['feature_importance'][importance_type]
+        importance = importance_type
+    elif model_type == 'RandomForestClassifier':
+        feature_importance = st.session_state['feature_importance']['feature_importance']
+        importance = 'Importance'
+    else:
+        st.error("Error: Unsupported model type")
+        return
+
+    # Sort features by importance
+    top_features = sorted(feature_importance.items(), key=lambda x: x[1], reverse=True)[:nb_features]
+
+    # Create horizontal bar plot
+    fig = plt.figure(figsize=(10, 6*nb_features/10))
+    plt.barh(range(len(top_features) - 1, -1, -1), [x[1] for x in top_features], tick_label=[x[0] for x in top_features])
+    plt.xlabel(f'{importance}')
+    plt.ylabel('Feature')
+    plt.title(f'Top {nb_features} Features - {model_type}')
+    st.pyplot(fig)
+
 # streamlit run dashboard.py
 
 st.title('Credit risk prediction')
 st.markdown('Get credit risk prediction for a client based on his/her ID')
+
 
 tab1, tab2, tab3 = st.tabs([':clipboard: Credit risk prediction', ':bar_chart: Feature importance', ':chart_with_upwards_trend: Client infos'])
 
 if 'client_id' not in st.session_state:
     st.session_state['client_id'] = None
 
-with tab1:
-    st.markdown('## Client infos')
-    st.write('Current client ID:', st.session_state['client_id'])
+if 'feature_importance' not in st.session_state:
+    st.session_state['feature_importance'] = get_global_feature_importance()
 
+with tab1:
     client_id = st.number_input(
         label='Client ID', min_value=0, max_value=1000000, value=st.session_state['client_id'],
         step=1, format='%i', placeholder='Enter client ID'
     )
-    submit = st.button('Submit')
+    submit = st.button('Predict credit risk', key='submit')
 
     if submit:
         st.session_state['client_id'] = client_id
+        st.write('Current client ID:', st.session_state['client_id'])
 
-        # st.write('You have entered:', client_id)
         conn = sqlite3.connect(
             'C:/Users/emile/DEV/WORKSPACE/projet-7-cours-oc/model/model/features/clients_infos.db'
         )
@@ -106,11 +146,27 @@ with tab1:
             risk_category = prediction_result['risk_category']
 
             # Display prediction result
-            display_result(prediction, confidence, risk_category)
+            display_credit_result(prediction, confidence, risk_category)
 
 with tab2:
     st.markdown('## Feature importance')
     st.write('Current client ID:', st.session_state['client_id'])
+
+    st.markdown('### Global feature importance')
+
+    model_type = st.session_state['feature_importance']['model_type']
+
+    if st.session_state['feature_importance']['model_type'] == 'XGBClassifier':
+        importance_type = st.radio("Select importance type:", ["weight", "cover", "gain"], index=0)
+    elif st.session_state['feature_importance']['model_type'] == 'RandomForestClassifier':
+        pass
+
+    nb_features = st.number_input(
+        label='Features nb', min_value=0, max_value=30, value=20,
+        step=1, format='%i', placeholder='Enter number of features to display'
+    )
+
+    display_feature_importance(model_type, nb_features, importance_type)
 
 with tab3:
     st.markdown('## Client infos')
