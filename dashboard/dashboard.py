@@ -23,7 +23,7 @@ if 'feature_importance' not in st.session_state:
     st.session_state['feature_importance'] = get_global_feature_importance()
 
 client_id = st.sidebar.number_input(
-    label='Client ID', min_value=0, max_value=1000000, value=st.session_state['client_id'],
+    label='Client ID', min_value=0, max_value=1000000, value=None,
     step=1, format='%i', placeholder='Enter client ID'    
 )
 submit_id = st.sidebar.button('Submit client ID', key='submit_id')
@@ -33,15 +33,10 @@ if submit_id:
 with tab1:
     st.write('Current client ID:', st.session_state['client_id'])
 
-    submit = st.button('Predict credit risk', key='submit')
-
-    if submit:
-
-        if client_id is None:
-            st.write('Please enter a client ID in the sidebar section.')
-
-        else:
-            predict_credit_risk(client_id=client_id)
+    if st.session_state['client_id'] is not None:
+        predict_credit_risk(client_id=client_id)
+    else:
+        st.write('Please enter a client ID in the sidebar section.')
 
 with tab2:
     st.markdown('## Feature importance')

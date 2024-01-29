@@ -102,19 +102,11 @@ def display_feature_importance(model_type, nb_features, importance_type):
     st.pyplot(fig)
 
 def predict_credit_risk(client_id: int, threshold: float = .5, api_url="http://127.0.0.1:8000/predict_from_dict"):
-    conn = sqlite3.connect(
-        'C:/Users/emile/DEV/WORKSPACE/projet-7-cours-oc/model/model/features/clients_infos.db'
-    )
-    query = f"SELECT * FROM train_df_debug WHERE SK_ID_CURR = ?"
-    result = pd.read_sql_query(query, conn, params=[client_id], index_col='SK_ID_CURR')
-    conn.close()
-
-    model_dict = result.drop(columns=['index', 'TARGET']).to_dict(orient='index')
-    client_infos = model_dict[client_id]
+    client_infos = get_client_infos(client_id=client_id)
     json_payload_predict_from_dict = client_infos
 
     response = requests.post(
-        'http://127.0.0.1:8000/predict_from_dict', json=json_payload_predict_from_dict
+        api_url, json=json_payload_predict_from_dict
     )
 
     if response.status_code == 200:
@@ -125,3 +117,16 @@ def predict_credit_risk(client_id: int, threshold: float = .5, api_url="http://1
 
         # Display prediction result
         display_credit_result(prediction, confidence, risk_category, threshold=threshold)
+
+def get_client_infos(client_id: int):
+    conn = sqlite3.connect(
+        'C:/Users/emile/DEV/WORKSPACE/projet-7-cours-oc/model/model/features/clients_infos.db'
+    )
+    query = f'SELECT * FROM train_df_debug WHERE SK_ID_CURR = ? ORDER BY "index"'
+    result = pd.read_sql_query(query, conn, params=[client_id], index_col='SK_ID_CURR')
+    conn.close()
+
+    model_dict = result.drop(columns=['index', 'TARGET']).to_dict(orient='index')
+    client_infos = model_dict[client_id]
+
+    return client_infos
