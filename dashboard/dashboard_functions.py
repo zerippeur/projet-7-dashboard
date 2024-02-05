@@ -60,10 +60,10 @@ def display_credit_result(prediction, confidence, risk_category, threshold=.5)->
     font_color = risk_categories[risk_category]
     chance_percentage = confidence * 100 if prediction == 0 else 100 - confidence * 100
     st.markdown(f"## Credit approval: <span style='color:{font_color}'>{risk_category}</span>", unsafe_allow_html=True)
-    st.markdown(f"### According to our prediction model,"
+    st.markdown(f"#### According to our prediction model,"
                 f" you have a <span style='color:{font_color}'>{chance_percentage:.2f}%</span>"
                 " chance to repay your loan.\n"
-                f"### Our threshold is fixed at {threshold*100:.2f}%."
+                f"#### Our threshold is fixed at {threshold*100:.2f}%."
                 " Please see feature importance or client informations for more information.",
                 unsafe_allow_html=True)
 
@@ -121,10 +121,10 @@ def get_client_infos(client_id: int, output: Literal['dict', 'df'] = 'df')-> dic
     if output == 'dict':
         model_dict = result.drop(columns=['index', 'TARGET']).to_dict(orient='index')
         client_infos = model_dict[client_id]
+        return client_infos
     elif output == 'df':
         client_infos = result.drop(columns=['index', 'TARGET'])
-    return client_infos
-
+        return client_infos
 
 def predict_credit_risk(client_id: int, threshold: float = .5, api_url="http://127.0.0.1:8000/predict_from_dict")-> None:
     client_infos = get_client_infos(client_id=client_id, output='dict')

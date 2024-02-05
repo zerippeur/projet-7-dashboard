@@ -60,7 +60,9 @@ with tab1:
     st.write('Current client ID:', st.session_state['client_id'])
 
     if st.session_state['client_id'] is not None:
-        predict_credit_risk(client_id=st.session_state['client_id'])
+        predict = st.button('Predict credit risk', key='predict')
+        if predict:
+            predict_credit_risk(client_id=st.session_state['client_id'])      
     else:
         st.write('Please enter a client ID in the sidebar section.')
 
