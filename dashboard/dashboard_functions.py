@@ -10,106 +10,11 @@ from imblearn.pipeline import Pipeline
 import shap
 import numpy as np
 from streamlit_shap import st_shap
+import seaborn as sns
 
-def plot_gauge(value, prediction)-> None:
-    colors = ['Darkturquoise', 'Paleturquoise', 'Gold', 'Coral', 'Firebrick']
-    values = [100, 80, 60, 40, 20, 0]
-    x_axis_values = [0, 0.628, 1.256, 1.884, 2.512, 3.14]
+# COMMON FUNCTIONS
 
-    plt.clf()
-    fig = plt.figure(figsize=(10, 10))
-    ax = fig.add_subplot(projection='polar')
-    ax.bar(x=x_axis_values[:-1], height=0.5, width=0.63, color=colors, bottom=2, align='edge', linewidth=3, edgecolor='white')
-
-    y_areas = 2.23
-    fontsize_areas = 18
-
-    plt.annotate("SAFE", xy=(0.314,y_areas), rotation=-72, color="white", fontweight="bold", fontsize=fontsize_areas, va="center", ha="center")
-    plt.annotate("UNCERTAIN", xy=(0.942,y_areas), rotation=-36, color="white", fontweight="bold", fontsize=fontsize_areas, va="center", ha="center")
-    plt.annotate("RISKY", xy=(1.57,y_areas), color="white", fontweight="bold", fontsize=fontsize_areas, va="center", ha="center")
-    plt.annotate("VERY RISKY", xy=(2.198,y_areas), rotation=36, color="white", fontweight="bold", fontsize=fontsize_areas, va="center", ha="center")
-    plt.annotate("NOPE", xy=(2.826,y_areas), rotation=72, color="white", fontweight="bold", fontsize=fontsize_areas, va="center", ha="center")
-
-    for loc, val in zip(x_axis_values, values):
-        plt.annotate(f'{val}%', xy=(loc, 2.5), va='bottom', ha='right' if val<=40 else 'left', fontsize=14)
-
-    gauge_value = value if prediction == 0 else 100 - value
-    gauge_position = 3.14-(value*0.0314) if prediction == 0 else 3.14-((100 - value)*0.0314)
-    plt.annotate(f'{gauge_value:.2f}%', xytext=(0,0), xy=(gauge_position, 2.0),
-             arrowprops=dict(arrowstyle="wedge, tail_width=0.5", color="black", shrinkA=0),
-             bbox=dict(boxstyle="circle", facecolor="black", linewidth=2.0, ),
-             fontsize=25, color="white", ha="center", va='center', fontweight="bold"
-            )
-
-
-    plt.title("Confidence meter", loc="center", pad=20, fontsize=20, fontweight="bold")
-
-    ax.set_axis_off()
-    st.pyplot(fig)
-
-def display_credit_result(prediction, confidence, risk_category, threshold=.5)-> None:
-
-    risk_categories = {
-        'SAFE': 'Darkturquoise',
-        'UNCERTAIN': 'Paleturquoise',
-        'RISKY': 'Gold',
-        'VERY RISKY': 'Coral',
-        'NOPE': 'Firebrick'
-    }
-
-    font_color = risk_categories[risk_category]
-    chance_percentage = confidence * 100 if prediction == 0 else 100 - confidence * 100
-    st.markdown(f"## Credit approval: <span style='color:{font_color}'>{risk_category}</span>", unsafe_allow_html=True)
-    st.markdown(f"#### According to our prediction model,"
-                f" you have a <span style='color:{font_color}'>{chance_percentage:.2f}%</span>"
-                " chance to repay your loan.\n"
-                f"#### Our threshold is fixed at {threshold*100:.2f}%."
-                " Please see feature importance or client informations for more information.",
-                unsafe_allow_html=True)
-
-    # Display confidence as a gauge
-    st.markdown("### Credit risk profile:")
-    plot_gauge(confidence * 100, prediction)
-
-# Function to get feature importance from API
-def get_built_in_global_feature_importance(api_url="http://127.0.0.1:8000/global_feature_importance")-> dict | None:
-    # Replace this URL with your actual API endpoint
-    api_url = api_url
-    
-    # Send POST request to API
-    response = requests.post(api_url)
-
-    if response.status_code == 200:
-        result = response.json()
-        return result
-    else:
-        st.error("Error fetching feature importance from API")
-        return None
-    
-def display_built_in_global_feature_importance(model_type, nb_features, importance_type)-> None:
-    st.markdown("### Feature importance")
-    if model_type == 'XGBClassifier':
-        feature_importance = st.session_state['feature_importance']['feature_importance'][importance_type]
-        importance = importance_type
-    elif model_type == 'RandomForestClassifier':
-        feature_importance = st.session_state['feature_importance']['feature_importance']
-        importance = 'Importance'
-    else:
-        st.error("Error: Unsupported model type")
-        return
-
-    # Sort features by importance
-    top_features = sorted(feature_importance.items(), key=lambda x: x[1], reverse=True)[:nb_features]
-
-    # Create horizontal bar plot
-    plt.clf()
-    fig = plt.figure(figsize=(10, 6*nb_features/10))
-    plt.barh(range(len(top_features) - 1, -1, -1), [x[1] for x in top_features], tick_label=[x[0] for x in top_features])
-    plt.xlabel(f'{importance}')
-    plt.ylabel('Feature')
-    plt.title(f'Top {nb_features} Features - {model_type}')
-    st.pyplot(fig)
-
+# Function to get client infos from id number 
 def get_client_infos(client_id: int, output: Literal['dict', 'df'] = 'df')-> dict | pd.DataFrame:
     conn = sqlite3.connect(
         'C:/Users/emile/DEV/WORKSPACE/projet-7-cours-oc/model/model/features/clients_infos.db'
@@ -126,23 +31,42 @@ def get_client_infos(client_id: int, output: Literal['dict', 'df'] = 'df')-> dic
         client_infos = result.drop(columns=['index', 'TARGET'])
         return client_infos
 
-def predict_credit_risk(client_id: int, threshold: float = .5, api_url="http://127.0.0.1:8000/predict_from_dict")-> None:
-    client_infos = get_client_infos(client_id=client_id, output='dict')
-    json_payload_predict_from_dict = client_infos
+# Function to generate accessible palettes based on the number of groups to colorize
+def generate_full_palette(num_groups):
+    # Define custom colors
+    custom_colors = ['MidnightBlue', 'Steelblue', 'Darkturquoise', 'Paleturquoise', 'Gold', 'Coral', 'Firebrick', 'Maroon']
 
-    response = requests.post(
-        api_url, json=json_payload_predict_from_dict
-    )
+    # If the number of groups is less than or equal to the length of custom_colors, use them directly
+    if num_groups <= len(custom_colors):
+        # Calculate the indices to select colors centered around 'Paleturquoise' and 'Gold'
+        start_index = max(0, len(custom_colors) // 2 - num_groups // 2)
+        end_index = min(len(custom_colors), start_index + num_groups)
+        selected_colors = custom_colors[start_index:end_index]
+    else:
+        # If the number of groups is greater than the length of custom_colors, create a blend palette
+        selected_colors = sns.blend_palette(custom_colors, num_groups)
+    
+    return selected_colors
+def generate_palette_without_gold(num_groups):
+    # Define custom colors without 'Gold'
+    custom_colors = ['MidnightBlue', 'Steelblue', 'Darkturquoise', 'Paleturquoise', 'Coral', 'Firebrick', 'Maroon']
 
-    if response.status_code == 200:
-        prediction_result = response.json()
-        prediction = prediction_result['prediction']
-        confidence = prediction_result['confidence']
-        risk_category = prediction_result['risk_category']
+    # If the number of groups is less than or equal to the length of custom_colors, use them directly
+    if num_groups <= len(custom_colors):
+        # Calculate the indices to select colors centered around 'Paleturquoise'
+        start_index = max(0, len(custom_colors) // 2 - (num_groups - 1) // 2)
+        end_index = min(len(custom_colors), start_index + num_groups)
+        selected_colors = custom_colors[start_index:end_index]
+    else:
+        # If the number of groups is greater than the length of custom_colors, create a blend palette
+        selected_colors = sns.blend_palette(custom_colors, num_groups)
+    
+    return selected_colors
 
-        # Display prediction result
-        display_credit_result(prediction, confidence, risk_category, threshold=threshold)
 
+# SIDEBAR FUNCTIONS FOR SHAP INITIATION
+
+# Function to balance classes
 def balance_classes(X: pd.DataFrame, y: pd.Series, method: Literal['smote', 'randomundersampler']='randomundersampler')-> Tuple[pd.DataFrame, pd.Series]:
     """
     Balance classes in the dataset using SMOTE or RandomUnderSampler.
@@ -194,15 +118,133 @@ def initiate_shap_explainer(api_url="http://127.0.0.1:8000/initiate_shap_explain
         st.error("Error initiating shap explainer")
         st.session_state.shap_explainer_initiated = False
 
-def get_feature_names_in(api_url="http://127.0.0.1:8000/feature_names_in")-> Union[dict, None]:
-    response = requests.get(api_url)
+
+# TAB 1 FUNCTIONS (CREDIT RISK PREDICTION)
+
+# Function to plot a gauge
+def plot_gauge(value, prediction)-> None:
+    colors = ['Darkturquoise', 'Paleturquoise', 'Gold', 'Coral', 'Firebrick']
+    values = [100, 80, 60, 40, 20, 0]
+    x_axis_values = [0, 0.628, 1.256, 1.884, 2.512, 3.14]
+
+    plt.clf()
+    fig = plt.figure(figsize=(10, 10))
+    ax = fig.add_subplot(projection='polar')
+    ax.bar(x=x_axis_values[:-1], height=0.5, width=0.63, color=colors, bottom=2, align='edge', linewidth=3, edgecolor='white')
+
+    y_areas = 2.23
+    fontsize_areas = 18
+
+    plt.annotate("SAFE", xy=(0.314,y_areas), rotation=-72, color="white", fontweight="bold", fontsize=fontsize_areas, va="center", ha="center")
+    plt.annotate("UNCERTAIN", xy=(0.942,y_areas), rotation=-36, color="white", fontweight="bold", fontsize=fontsize_areas, va="center", ha="center")
+    plt.annotate("RISKY", xy=(1.57,y_areas), color="white", fontweight="bold", fontsize=fontsize_areas, va="center", ha="center")
+    plt.annotate("VERY RISKY", xy=(2.198,y_areas), rotation=36, color="white", fontweight="bold", fontsize=fontsize_areas, va="center", ha="center")
+    plt.annotate("NOPE", xy=(2.826,y_areas), rotation=72, color="white", fontweight="bold", fontsize=fontsize_areas, va="center", ha="center")
+
+    for loc, val in zip(x_axis_values, values):
+        plt.annotate(f'{val}%', xy=(loc, 2.5), va='bottom', ha='right' if val<=40 else 'left', fontsize=14)
+
+    gauge_value = value if prediction == 0 else 100 - value
+    gauge_position = 3.14-(value*0.0314) if prediction == 0 else 3.14-((100 - value)*0.0314)
+    plt.annotate(f'{gauge_value:.2f}%', xytext=(0,0), xy=(gauge_position, 2.0),
+             arrowprops=dict(arrowstyle="wedge, tail_width=0.5", color="black", shrinkA=0),
+             bbox=dict(boxstyle="circle", facecolor="black", linewidth=2.0, ),
+             fontsize=25, color="white", ha="center", va='center', fontweight="bold"
+            )
+
+
+    plt.title("Confidence meter", loc="center", pad=20, fontsize=20, fontweight="bold")
+
+    ax.set_axis_off()
+    st.pyplot(fig)
+
+# Function to display credit result
+def display_credit_result(prediction, confidence, risk_category, threshold=.5)-> None:
+
+    risk_categories = {
+        'SAFE': 'Darkturquoise',
+        'UNCERTAIN': 'Paleturquoise',
+        'RISKY': 'Gold',
+        'VERY RISKY': 'Coral',
+        'NOPE': 'Firebrick'
+    }
+
+    font_color = risk_categories[risk_category]
+    chance_percentage = confidence * 100 if prediction == 0 else 100 - confidence * 100
+    st.markdown(f"## Credit approval: <span style='color:{font_color}'>{risk_category}</span>", unsafe_allow_html=True)
+    st.markdown(f"#### According to our prediction model,"
+                f" you have a <span style='color:{font_color}'>{chance_percentage:.2f}%</span>"
+                " chance to repay your loan.\n"
+                f"#### Our threshold is fixed at {threshold*100:.2f}%."
+                " Please see feature importance or client informations for more information.",
+                unsafe_allow_html=True)
+
+    # Display confidence as a gauge
+    st.markdown("### Credit risk profile:")
+    plot_gauge(confidence * 100, prediction)
+
+# Function to predict credit risk
+def predict_credit_risk(client_id: int, threshold: float = .5, api_url="http://127.0.0.1:8000/predict_from_dict")-> None:
+    client_infos = get_client_infos(client_id=client_id, output='dict')
+    json_payload_predict_from_dict = client_infos
+
+    response = requests.post(
+        api_url, json=json_payload_predict_from_dict
+    )
+
+    if response.status_code == 200:
+        prediction_result = response.json()
+        prediction = prediction_result['prediction']
+        confidence = prediction_result['confidence']
+        risk_category = prediction_result['risk_category']
+
+        # Display prediction result
+        display_credit_result(prediction, confidence, risk_category, threshold=threshold)
+
+
+# TAB 2 FUNCTIONS (FEATURE IMPORTANCE)
+
+# Function to get feature importance from API
+def get_built_in_global_feature_importance(api_url="http://127.0.0.1:8000/global_feature_importance")-> dict | None:
+    # Replace this URL with your actual API endpoint
+    api_url = api_url
+    
+    # Send POST request to API
+    response = requests.post(api_url)
+
     if response.status_code == 200:
         result = response.json()
         return result
     else:
-        st.error("Error fetching feature names from API")
+        st.error("Error fetching feature importance from API")
         return None
 
+# Function to display feature importance
+def display_built_in_global_feature_importance(model_type, nb_features, importance_type)-> None:
+    st.markdown("### Feature importance")
+    if model_type == 'XGBClassifier':
+        feature_importance = st.session_state['feature_importance']['feature_importance'][importance_type]
+        importance = importance_type
+    elif model_type == 'RandomForestClassifier':
+        feature_importance = st.session_state['feature_importance']['feature_importance']
+        importance = 'Importance'
+    else:
+        st.error("Error: Unsupported model type")
+        return
+
+    # Sort features by importance
+    top_features = sorted(feature_importance.items(), key=lambda x: x[1], reverse=True)[:nb_features]
+
+    # Create horizontal bar plot
+    plt.clf()
+    fig = plt.figure(figsize=(10, 6*nb_features/10))
+    plt.barh(range(len(top_features) - 1, -1, -1), [x[1] for x in top_features], tick_label=[x[0] for x in top_features])
+    plt.xlabel(f'{importance}')
+    plt.ylabel('Feature')
+    plt.title(f'Top {nb_features} Features - {model_type}')
+    st.pyplot(fig)
+
+# Function to get shap feature importance from API
 def get_shap_feature_importance(client_id: int|None, scale: Literal['Global', 'Local'], api_url: str="http://127.0.0.1:8000/shap_feature_importance")-> Union[dict, None]:
     if scale == 'Global':
         json_payload_shap_feature_importance = {
@@ -227,11 +269,13 @@ def get_shap_feature_importance(client_id: int|None, scale: Literal['Global', 'L
         st.error("Error fetching feature importance from API")
         return None
 
+# Function to update shap session state
 def update_shap_session_state(client_id, scale, data):
     st.session_state['shap'][scale]['initiated'] = True
     st.session_state['shap'][scale]['data'] = data
     st.session_state['shap'][scale]['client_id'] = client_id
 
+# Function to display shap feature importance
 def plot_shap(shap_feature_importance_dict, scale, nb_features: int=20):
     data = pd.DataFrame.from_dict(shap_feature_importance_dict['data'], orient='index')
     shap_values = np.array(shap_feature_importance_dict['shap_values'])
@@ -257,6 +301,7 @@ def plot_shap(shap_feature_importance_dict, scale, nb_features: int=20):
             show=False)
         )
 
+# Function to display shap feature importance
 def display_shap_feature_importance(client_id: int|None, scale: Literal['Global', 'Local'], nb_features: int=20)-> None:
     if scale == 'Global':
         if not st.session_state['shap'][scale]['initiated']:
@@ -272,3 +317,134 @@ def display_shap_feature_importance(client_id: int|None, scale: Literal['Global'
             update_shap_session_state(client_id=client_id, scale=scale, data=shap_feature_importance_dict)
         else:
             plot_shap(st.session_state['shap'][scale]['data'], scale=scale, nb_features=nb_features)
+
+
+# TAB 3 FUNCTIONS (CLIENT COMPARISON)
+
+            
+# Function to fetch available features (both int/float and categorical)
+def fetch_available_features():
+    conn = sqlite3.connect('C:/Users/emile/DEV/WORKSPACE/projet-7-cours-oc/model/model/features/clients_infos.db')
+    features_query = "PRAGMA table_info(train_df_debug)"
+    features_df = pd.read_sql_query(features_query, conn)
+    conn.close()
+    return features_df['name'].tolist()
+
+# Function to fetch categorical features for grouping
+def fetch_categorical_features(global_features):
+    conn = sqlite3.connect('C:/Users/emile/DEV/WORKSPACE/projet-7-cours-oc/model/model/features/clients_infos.db')
+    features_query = "PRAGMA table_info(train_df_debug)"
+    features_df = pd.read_sql_query(features_query, conn)
+    conn.close()
+
+    # Filter out features with data type 'int' (assuming they are categorical)
+    categorical_features = features_df[features_df['type'] == 'INTEGER']['name'].tolist()
+
+    # Remove 'index' and 'SK_ID_CURR' from the list of categorical features
+    categorical_features = [feature for feature in categorical_features if feature not in ['index', 'SK_ID_CURR']]
+
+    # Sort categorical features according to the order of global features
+    ordered_categorical_features = [feature for feature in global_features if feature in categorical_features]
+
+    # Insert 'TARGET' after an empty string at the beginning of the list
+    ordered_categorical_features.insert(0, 'TARGET')
+
+    return ordered_categorical_features
+
+# Function to fetch group values for a selected categorical feature
+def fetch_group_values(selected_categorical_feature):
+    if selected_categorical_feature is None:
+        return []
+
+    conn = sqlite3.connect('C:/Users/emile/DEV/WORKSPACE/projet-7-cours-oc/model/model/features/clients_infos.db')
+    group_values_query = f"SELECT DISTINCT {selected_categorical_feature} FROM train_df_debug"
+    group_values_df = pd.read_sql_query(group_values_query, conn)
+    conn.close()
+
+    group_values = group_values_df[selected_categorical_feature].tolist()
+    return group_values
+
+# Function to fetch data based on user input
+def fetch_data(selected_global_feature, selected_categorical_feature):
+    # Query to fetch data for the selected global feature
+    conn = sqlite3.connect('C:/Users/emile/DEV/WORKSPACE/projet-7-cours-oc/model/model/features/clients_infos.db')
+    global_feature_query = f"SELECT SK_ID_CURR, {selected_global_feature} FROM train_df_debug"
+    df = pd.read_sql_query(global_feature_query, conn)
+
+    # If a categorical feature is selected, fetch data for each group
+    if selected_categorical_feature:
+        group_values = fetch_group_values(selected_categorical_feature)
+        grouped_data = []
+        for group_value in group_values:
+            query = f"SELECT SK_ID_CURR, {selected_global_feature} FROM train_df_debug WHERE {selected_categorical_feature} = ?"
+            group_df = pd.read_sql_query(query, conn, params=(group_value,))
+            grouped_data.append(group_df)
+        conn.close()
+        return df, grouped_data, group_values
+    else:
+        conn.close()
+        return df, None, None
+
+# Function to display histogram chart
+def display_histogram_chart(df, selected_global_feature, grouped_data, group_values, client_id, selected_aggregation, selected_categorical_feature):
+    # Get the current client value
+    current_client_value = df[df['SK_ID_CURR'] == client_id][selected_global_feature].iloc[0]
+
+    # Define the title based on selected features
+    if selected_categorical_feature:
+        title = f'Histogram Chart for {selected_global_feature} (Grouped by {selected_categorical_feature})'
+        
+        # Determine the number of groups
+        num_groups = len(group_values)
+        # Generate the palette based on the number of groups
+        palette = generate_palette_without_gold(num_groups)
+
+    else:
+        title = f'Histogram Chart for {selected_global_feature}'
+
+    # Display histogram chart(s)
+    if not df.empty:
+        plt.clf()
+        fig, ax = plt.subplots(figsize=(10, 6))
+
+        # If no categorical feature is selected, plot a single histogram
+        if not grouped_data:
+            sns.histplot(df[selected_global_feature], kde=True, color='PaleTurquoise', label='All Clients', ax=ax)
+            
+            # Plot vertical line for the mean/median of all clients
+            if selected_aggregation:
+                other_clients_aggregation = np.median(df[selected_global_feature])
+                ax.axvline(x=other_clients_aggregation, color='PaleTurquoise', linestyle='--', label=f'Other Clients Median: {other_clients_aggregation:.3f}')
+            else:
+                other_clients_aggregation = np.mean(df[selected_global_feature])
+                ax.axvline(x=other_clients_aggregation, color='PaleTurquoise', linestyle='--', label=f'Other Clients Mean: {other_clients_aggregation:.3f}')
+        else:
+            # Concatenate grouped DataFrames with an additional column indicating the group value
+            concatenated_df = pd.concat([group_df.assign(Group_Value=group_value) for group_df, group_value in zip(grouped_data, group_values)])
+            
+            # Sort the groups based on their mean/median values
+            if selected_aggregation:
+                group_aggregations = [np.median(group_df[selected_global_feature]) for group_df in grouped_data]
+            else:
+                group_aggregations = [np.mean(group_df[selected_global_feature]) for group_df in grouped_data]
+            sorted_indices = sorted(range(num_groups), key=lambda x: group_aggregations[x], reverse=True)
+            sorted_group_values = [group_values[i] for i in sorted_indices]
+            sns.histplot(data=concatenated_df, x=selected_global_feature, kde=True, alpha=0.5, hue='Group_Value', multiple='stack', ax=ax, palette=palette, hue_order=sorted_group_values, label='Histogram')
+                
+            # Plot vertical line for the mean/median of the current group
+            for i, j in zip(range(num_groups), sorted_indices): # CHECK THIS
+                ax.axvline(x=group_aggregations[j], color=palette[i], linestyle='--')
+
+            # Create a legend for the vertical lines representing group mean/median values
+            legend_handles = [plt.Line2D([0], [0], color=palette[i], linestyle='--', label=f'Group {group_value} {"Median" if selected_aggregation else "Mean"}: {group_aggregations[j]:.3f}') for i, j, group_value in zip(range(num_groups), sorted_indices, sorted_group_values)]
+            ax.legend(handles=legend_handles, loc='upper right')
+
+        # Plot vertical line for the current client value
+        ax.axvline(x=current_client_value, color='Gold', linestyle='-', label=f'Current Client Value: {current_client_value:.3f}')
+
+        plt.xlabel(selected_global_feature)
+        plt.ylabel('Frequency')
+        plt.title(title)
+        st.pyplot(fig)
+    else:
+        st.warning("No data available for the selected criteria.")

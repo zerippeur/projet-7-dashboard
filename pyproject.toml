@@ -17,6 +17,7 @@ sqlalchemy = "^2.0.25"
 imblearn = "^0.0"
 shap = "^0.44.1"
 streamlit-shap = "^1.0.2"
+seaborn = "^0.13.2"
 
 
 [tool.poetry.group.dev.dependencies]

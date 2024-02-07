@@ -4,8 +4,10 @@ import requests
 import sqlite3
 import matplotlib.pyplot as plt
 from sqlalchemy import create_engine, text
-from dashboard_functions import display_credit_result, plot_gauge, display_built_in_global_feature_importance, get_built_in_global_feature_importance, predict_credit_risk
+from dashboard_functions import display_credit_result, plot_gauge, predict_credit_risk, get_client_infos
+from dashboard_functions import display_built_in_global_feature_importance, get_built_in_global_feature_importance
 from dashboard_functions import initiate_shap_explainer, get_shap_feature_importance, display_shap_feature_importance
+from dashboard_functions import fetch_data, fetch_categorical_features, display_histogram_chart
 from streamlit_shap import st_shap
 
 model_threshold = .5
@@ -16,7 +18,7 @@ st.title('Credit risk prediction')
 st.markdown('Get credit risk prediction for a client based on his/her ID')
 
 
-tab1, tab2, tab3, tab4 = st.tabs([':clipboard: Credit risk prediction', ':bar_chart: Feature importance', ':chart_with_upwards_trend: Client informations', ':wrench: debug'])
+tab1, tab2, tab3, tab4 = st.tabs([':clipboard: Credit risk prediction', ':bar_chart: Feature importance', ':chart_with_upwards_trend: Client comparison', ':wrench: debug'])
 
 if 'client_id' not in st.session_state:
     st.session_state['client_id'] = None
@@ -39,6 +41,9 @@ if 'shap' not in st.session_state:
             'client_id': None
         }
     }
+
+# if 'available_features' not in st.session_state:
+#     st.session_state['available_features'] = fetch_feature_and_group_values()
 
 client_id = st.sidebar.number_input(
     label='Client ID', min_value=0, max_value=1000000, value=None,
@@ -110,11 +115,34 @@ with tab2:
                 
 
 with tab3:
-    st.markdown('## Client infos')
+    st.markdown('## Client informations')
     st.write('Current client ID:', st.session_state['client_id'])
+
+    if st.session_state['client_id'] is None:
+        st.write('Please enter a client ID in the sidebar section.')
+    else:
+        if st.session_state['feature_importance']['model_type'] == 'XGBClassifier':
+            importance_type = st.radio("Order available feature by feature importance type:", ["weight", "cover", "gain"], index=0, horizontal=True)
+            st.session_state['available_features'] = {
+                'global_features': [key for key, _ in sorted(st.session_state['feature_importance']['feature_importance'][importance_type].items(), key=lambda item: item[1], reverse=True)],
+                'categorical_features': fetch_categorical_features(st.session_state['feature_importance']['feature_importance'][importance_type])
+            }
+
+            selected_global_feature = st.selectbox('Select Global Feature (Int/Float)', st.session_state['available_features']['global_features'])
+            selected_categorical_feature = st.selectbox('Select Categorical Feature for Grouping', [''] + st.session_state['available_features']['categorical_features'])
+            
+            # Fetch data based on user input
+            df, grouped_data, group_values = fetch_data(selected_global_feature, selected_categorical_feature)
+
+            selected_aggregation = st.checkbox('Use Median instead of Mean')
+            selected_client = st.session_state['client_id']
+
+            draw_comparison_chart = st.button('Draw client comparison chart', key='client_comparison')
+            if draw_comparison_chart:
+                display_histogram_chart(df, selected_global_feature, grouped_data, group_values, client_id, selected_aggregation, selected_categorical_feature)
 
 with tab4:
     st.markdown('## Debug')
     st.write('Current client ID:', st.session_state['client_id'])
 
-    st.markdown('### No current debug available')
+    st.markdown('### No active debug')
