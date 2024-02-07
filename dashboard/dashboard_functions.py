@@ -392,7 +392,7 @@ def display_histogram_chart(df, selected_global_feature, grouped_data, group_val
 
     # Define the title based on selected features
     if selected_categorical_feature:
-        title = f'Histogram Chart for {selected_global_feature} (Grouped by {selected_categorical_feature})'
+        title = f'Stacked histogram chart for {selected_global_feature} (Grouped by {selected_categorical_feature})'
         
         # Determine the number of groups
         num_groups = len(group_values)
@@ -400,7 +400,7 @@ def display_histogram_chart(df, selected_global_feature, grouped_data, group_val
         palette = generate_palette_without_gold(num_groups)
 
     else:
-        title = f'Histogram Chart for {selected_global_feature}'
+        title = f'Stacked histogram chart for {selected_global_feature}'
 
     # Display histogram chart(s)
     if not df.empty:
@@ -409,15 +409,13 @@ def display_histogram_chart(df, selected_global_feature, grouped_data, group_val
 
         # If no categorical feature is selected, plot a single histogram
         if not grouped_data:
-            sns.histplot(df[selected_global_feature], kde=True, color='PaleTurquoise', label='All Clients', ax=ax)
+            sns.histplot(df[selected_global_feature], kde=True, color='PaleTurquoise', label='All clients', ax=ax)
             
             # Plot vertical line for the mean/median of all clients
-            if selected_aggregation:
-                other_clients_aggregation = np.median(df[selected_global_feature])
-                ax.axvline(x=other_clients_aggregation, color='PaleTurquoise', linestyle='--', label=f'Other Clients Median: {other_clients_aggregation:.3f}')
-            else:
-                other_clients_aggregation = np.mean(df[selected_global_feature])
-                ax.axvline(x=other_clients_aggregation, color='PaleTurquoise', linestyle='--', label=f'Other Clients Mean: {other_clients_aggregation:.3f}')
+            other_clients_aggregation = np.median(df[selected_global_feature]) if selected_aggregation else np.mean(df[selected_global_feature])
+            ax.axvline(x=other_clients_aggregation, color='PaleTurquoise', linestyle='--', label=f'Other clients - {"Median" if selected_aggregation else "Mean"}: {other_clients_aggregation:.3f}')
+            other_clients_legend_handles = [plt.Line2D([], [], color='PaleTurquoise', linestyle='--', label=f'All clients - {"Median" if selected_aggregation else "Mean"}: {other_clients_aggregation:.3f}')]
+            
         else:
             # Concatenate grouped DataFrames with an additional column indicating the group value
             concatenated_df = pd.concat([group_df.assign(Group_Value=group_value) for group_df, group_value in zip(grouped_data, group_values)])
@@ -436,11 +434,13 @@ def display_histogram_chart(df, selected_global_feature, grouped_data, group_val
                 ax.axvline(x=group_aggregations[j], color=palette[i], linestyle='--')
 
             # Create a legend for the vertical lines representing group mean/median values
-            legend_handles = [plt.Line2D([0], [0], color=palette[i], linestyle='--', label=f'Group {group_value} {"Median" if selected_aggregation else "Mean"}: {group_aggregations[j]:.3f}') for i, j, group_value in zip(range(num_groups), sorted_indices, sorted_group_values)]
-            ax.legend(handles=legend_handles, loc='upper right')
+            other_clients_legend_handles = [plt.Line2D([], [], color=palette[i], linestyle='--', label=f'Group {group_value} - {"Median" if selected_aggregation else "Mean"}: {group_aggregations[j]:.3f}') for i, j, group_value in zip(range(num_groups), sorted_indices, sorted_group_values)]
 
         # Plot vertical line for the current client value
-        ax.axvline(x=current_client_value, color='Gold', linestyle='-', label=f'Current Client Value: {current_client_value:.3f}')
+        ax.axvline(x=current_client_value, color='Gold', linestyle='-', label=f'Current client value: {current_client_value:.3f}')
+        client_legend_handles = [plt.Line2D([], [], color='Gold', linestyle='-', label=f'Current client value: {current_client_value:.3f}')]
+
+        ax.legend(handles=[*client_legend_handles, *other_clients_legend_handles], loc='upper right') # CHECK THIS, *client_legend_handles, loc='upper right')
 
         plt.xlabel(selected_global_feature)
         plt.ylabel('Frequency')
