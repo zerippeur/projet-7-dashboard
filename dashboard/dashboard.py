@@ -7,8 +7,9 @@ from sqlalchemy import create_engine, text
 from dashboard_functions import display_credit_result, plot_gauge, predict_credit_risk, get_client_infos
 from dashboard_functions import display_built_in_global_feature_importance, get_built_in_global_feature_importance
 from dashboard_functions import initiate_shap_explainer, get_shap_feature_importance, display_shap_feature_importance
-from dashboard_functions import fetch_data, fetch_categorical_features, display_histogram_chart
+from dashboard_functions import fetch_data, fetch_categorical_features, display_histogram_chart, fetch_split_features
 from streamlit_shap import st_shap
+import numpy as np
 
 model_threshold = .5
 
@@ -26,6 +27,8 @@ if 'client_id' not in st.session_state:
 if 'feature_importance' not in st.session_state:
     st.session_state['feature_importance'] = get_built_in_global_feature_importance()
 
+available_importance_types = list(st.session_state['feature_importance']['feature_importance'].keys())
+
 if 'shap_explainer_initiated' not in st.session_state:
     st.session_state['shap_explainer_initiated'] = 'Not initiated'
 
@@ -41,6 +44,9 @@ if 'shap' not in st.session_state:
             'client_id': None
         }
     }
+
+importance_scale = ['Global', 'Local']
+available_explainer_types = ['Built-in', 'Shap']
 
 # if 'available_features' not in st.session_state:
 #     st.session_state['available_features'] = fetch_feature_and_group_values()
@@ -75,15 +81,15 @@ with tab2:
     st.markdown('## Feature importance')
     st.write('Current client ID:', st.session_state['client_id'])
 
-    explainer = st.radio('Select explainer', ['Built_in', 'Shap'], index=None, horizontal=True)
+    explainer = st.radio('Select explainer', available_explainer_types, index=None, horizontal=True)
 
-    if explainer == 'Built_in':
-        st.markdown('### Built_in feature importance')
+    if explainer == 'Built-in':
+        st.markdown('### Built-in feature importance')
 
         model_type = st.session_state['feature_importance']['model_type']
 
         if st.session_state['feature_importance']['model_type'] == 'XGBClassifier':
-            importance_type = st.radio("Select importance type:", ["weight", "cover", "gain"], index=0, horizontal=True)
+            importance_type = st.radio("Select importance type:", available_importance_types, index=0, horizontal=True)
         elif st.session_state['feature_importance']['model_type'] == 'RandomForestClassifier':
             pass
 
@@ -100,7 +106,7 @@ with tab2:
             st.write('Please initiate Shap explainer in the sidebar section.')
 
         if st.session_state.shap_explainer_initiated == 'Initiated':
-            feature_scale = st.radio('Select shap feature importance scale', ["Global", "Local"], index=0, horizontal=True)
+            feature_scale = st.radio('Select shap feature importance scale', importance_scale, index=0, horizontal=True)
             if feature_scale == 'Global':
                 nb_features = st.number_input(
                     label='Features nb', min_value=0, max_value=30, value=20,
@@ -121,28 +127,38 @@ with tab3:
     if st.session_state['client_id'] is None:
         st.write('Please enter a client ID in the sidebar section.')
     else:
-        if st.session_state['feature_importance']['model_type'] == 'XGBClassifier':
-            importance_type = st.radio("Order available feature by feature importance type:", ["weight", "cover", "gain"], index=0, horizontal=True)
-            st.session_state['available_features'] = {
-                'global_features': [key for key, _ in sorted(st.session_state['feature_importance']['feature_importance'][importance_type].items(), key=lambda item: item[1], reverse=True)],
-                'categorical_features': fetch_categorical_features(st.session_state['feature_importance']['feature_importance'][importance_type])
-            }
+        importance_type = st.radio("Order available feature by feature importance type:", available_importance_types, index=0, horizontal=True)
+        st.session_state['available_features'] = {
+            'global_features': [key for key, _ in sorted(st.session_state['feature_importance']['feature_importance'][importance_type].items(), key=lambda item: item[1], reverse=True)],
+            'categorical_features': fetch_categorical_features(st.session_state['feature_importance']['feature_importance'][importance_type])
+        }
 
-            selected_global_feature = st.selectbox('Select Global Feature (Int/Float)', st.session_state['available_features']['global_features'])
-            selected_categorical_feature = st.selectbox('Select Categorical Feature for Grouping', [''] + st.session_state['available_features']['categorical_features'])
-            
-            # Fetch data based on user input
-            df, grouped_data, group_values = fetch_data(selected_global_feature, selected_categorical_feature)
+        selected_global_feature = st.selectbox('Select Global Feature (Int/Float)', st.session_state['available_features']['global_features'])
+        selected_categorical_feature = st.selectbox('Select Categorical Feature for Grouping', [''] + st.session_state['available_features']['categorical_features'])
+        
+        # Fetch data based on user input
+        df, grouped_data, group_values = fetch_data(selected_global_feature, selected_categorical_feature)
 
-            selected_aggregation = st.checkbox('Use Median instead of Mean')
-            selected_client = st.session_state['client_id']
+        selected_aggregation = st.checkbox('Use Median instead of Mean')
+        selected_client = st.session_state['client_id']
 
-            draw_comparison_chart = st.button('Draw client comparison chart', key='client_comparison')
-            if draw_comparison_chart:
-                display_histogram_chart(df, selected_global_feature, grouped_data, group_values, client_id, selected_aggregation, selected_categorical_feature)
+        draw_comparison_chart = st.button('Draw client comparison chart', key='client_comparison')
+        if draw_comparison_chart:
+            display_histogram_chart(df, selected_global_feature, grouped_data, group_values, client_id, selected_aggregation, selected_categorical_feature)
 
 with tab4:
     st.markdown('## Debug')
     st.write('Current client ID:', st.session_state['client_id'])
 
     st.markdown('### No active debug')
+
+    if st.session_state['client_id'] is None:
+        st.write('Please enter a client ID in the sidebar section.')
+    else:
+        importance_type = st.radio("Order available feature by feature importance type:", available_importance_types, index=0, horizontal=True, key='importance_type_debug')
+        st.session_state['available_features'] = {
+            'global_features': [key for key, _ in sorted(st.session_state['feature_importance']['feature_importance'][importance_type].items(), key=lambda item: item[1], reverse=True)],
+            'categorical_features': fetch_categorical_features(st.session_state['feature_importance']['feature_importance'][importance_type]),
+            'split_features': fetch_split_features(st.session_state['feature_importance']['feature_importance'][importance_type])
+        }
+        st.write(st.session_state['available_features']['global_features'], st.session_state['available_features']['categorical_features'], st.session_state['available_features']['split_features'])

@@ -11,6 +11,7 @@ import shap
 import numpy as np
 from streamlit_shap import st_shap
 import seaborn as sns
+import plotly.figure_factory as ff
 
 # COMMON FUNCTIONS
 
@@ -351,6 +352,17 @@ def fetch_categorical_features(global_features):
 
     return ordered_categorical_features
 
+def fetch_split_features(global_features):
+    conn = sqlite3.connect('C:/Users/emile/DEV/WORKSPACE/projet-7-cours-oc/model/model/features/clients_infos.db')
+    features_query = "PRAGMA table_info(train_df_debug)"
+    features_df = pd.read_sql_query(features_query, conn)
+    conn.close()
+
+    # remove features with more than two unique values
+    split_features = [feature for feature in features_df['name'].tolist() if len(features_df[feature].unique()) < 3]
+
+    return split_features
+
 # Function to fetch group values for a selected categorical feature
 def fetch_group_values(selected_categorical_feature):
     if selected_categorical_feature is None:
@@ -402,6 +414,9 @@ def display_histogram_chart(df, selected_global_feature, grouped_data, group_val
     else:
         title = f'Stacked histogram chart for {selected_global_feature}'
 
+    # Set Seaborn style to dark background
+    sns.set(style="darkgrid")
+
     # Display histogram chart(s)
     if not df.empty:
         plt.clf()
@@ -448,3 +463,13 @@ def display_histogram_chart(df, selected_global_feature, grouped_data, group_val
         st.pyplot(fig)
     else:
         st.warning("No data available for the selected criteria.")
+
+def fetch_both_global_and_categorical_features(selected_global_feature, selected_categorical_feature):
+    conn = sqlite3.connect('C:/Users/emile/DEV/WORKSPACE/projet-7-cours-oc/model/model/features/clients_infos.db')
+    if selected_categorical_feature != '':
+        feature_query = f"SELECT SK_ID_CURR, {selected_global_feature}, {selected_categorical_feature} FROM train_df_debug"
+    else:
+        feature_query = f"SELECT SK_ID_CURR, {selected_global_feature} FROM train_df_debug"
+    feature_df = pd.read_sql_query(feature_query, conn)
+    conn.close()
+    return feature_df
