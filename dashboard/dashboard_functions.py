@@ -11,7 +11,8 @@ import shap
 import numpy as np
 from streamlit_shap import st_shap
 import seaborn as sns
-import plotly.figure_factory as ff
+import plotly.express as px
+import plotly.graph_objects as go
 
 # COMMON FUNCTIONS
 
@@ -64,6 +65,12 @@ def generate_palette_without_gold(num_groups):
     
     return selected_colors
 
+def rename_columns_based_on_col_index(df, realnames):
+    # Rename columns based on realnames list
+    num_columns = min(len(df.columns), len(realnames))
+    for idx in range(num_columns):
+        df.rename(columns={df.columns[idx]: realnames[idx]}, inplace=True)
+    return df
 
 # SIDEBAR FUNCTIONS FOR SHAP INITIATION
 
@@ -113,11 +120,12 @@ def initiate_shap_explainer(api_url="http://127.0.0.1:8000/initiate_shap_explain
     data_for_shap_initiation = get_data_for_shap_initiation()
     response = requests.post(api_url, json=data_for_shap_initiation)
     if response.status_code == 200:
-        st.session_state.shap_explainer_initiated = True
+        # st.session_state.shap_explainer_initiated = True
         st.success("Shap explainer initiated successfully")
+        st.session_state['shap_explainer_initiated'] = 'Initiated'
     else:
         st.error("Error initiating shap explainer")
-        st.session_state.shap_explainer_initiated = False
+        # st.session_state.shap_explainer_initiated = False
 
 
 # TAB 1 FUNCTIONS (CREDIT RISK PREDICTION)
@@ -323,20 +331,24 @@ def display_shap_feature_importance(client_id: int|None, scale: Literal['Global'
 # TAB 3 FUNCTIONS (CLIENT COMPARISON)
 
             
-# Function to fetch available features (both int/float and categorical)
-def fetch_available_features():
-    conn = sqlite3.connect('C:/Users/emile/DEV/WORKSPACE/projet-7-cours-oc/model/model/features/clients_infos.db')
-    features_query = "PRAGMA table_info(train_df_debug)"
-    features_df = pd.read_sql_query(features_query, conn)
-    conn.close()
-    return features_df['name'].tolist()
+# # Function to fetch available features (both int/float and categorical)
+# def fetch_available_features():
+#     conn = sqlite3.connect('C:/Users/emile/DEV/WORKSPACE/projet-7-cours-oc/model/model/features/clients_infos.db')
+#     features_query = "PRAGMA table_info(train_df_debug)"
+#     features_df = pd.read_sql_query(features_query, conn)
+#     conn.close()
+#     return features_df['name'].tolist()
 
-# Function to fetch categorical features for grouping
-def fetch_categorical_features(global_features):
+def fetch_cat_and_split_features(global_features):
     conn = sqlite3.connect('C:/Users/emile/DEV/WORKSPACE/projet-7-cours-oc/model/model/features/clients_infos.db')
     features_query = "PRAGMA table_info(train_df_debug)"
     features_df = pd.read_sql_query(features_query, conn)
-    conn.close()
+    cursor = conn.cursor()
+
+    def is_binary_column(column_name):
+        cursor.execute(f"SELECT COUNT(DISTINCT {column_name}) FROM train_df_debug")
+        num_distinct_values = cursor.fetchone()[0]
+        return num_distinct_values == 2
 
     # Filter out features with data type 'int' (assuming they are categorical)
     categorical_features = features_df[features_df['type'] == 'INTEGER']['name'].tolist()
@@ -349,19 +361,14 @@ def fetch_categorical_features(global_features):
 
     # Insert 'TARGET' after an empty string at the beginning of the list
     ordered_categorical_features.insert(0, 'TARGET')
+    # st.write(ordered_categorical_features)
+    # st.write(features_df)
+    # remove features with more than two unique values
+    split_features = [feature for feature in ordered_categorical_features if is_binary_column(feature)]
 
-    return ordered_categorical_features
-
-def fetch_split_features(global_features):
-    conn = sqlite3.connect('C:/Users/emile/DEV/WORKSPACE/projet-7-cours-oc/model/model/features/clients_infos.db')
-    features_query = "PRAGMA table_info(train_df_debug)"
-    features_df = pd.read_sql_query(features_query, conn)
     conn.close()
 
-    # remove features with more than two unique values
-    split_features = [feature for feature in features_df['name'].tolist() if len(features_df[feature].unique()) < 3]
-
-    return split_features
+    return ordered_categorical_features, split_features
 
 # Function to fetch group values for a selected categorical feature
 def fetch_group_values(selected_categorical_feature):
@@ -464,12 +471,88 @@ def display_histogram_chart(df, selected_global_feature, grouped_data, group_val
     else:
         st.warning("No data available for the selected criteria.")
 
-def fetch_both_global_and_categorical_features(selected_global_feature, selected_categorical_feature):
+def fetch_violinplot_data(selected_global_feature: str, selected_categorical_feature: str, selected_split_feature: str):
+    # Retrieve data
     conn = sqlite3.connect('C:/Users/emile/DEV/WORKSPACE/projet-7-cours-oc/model/model/features/clients_infos.db')
-    if selected_categorical_feature != '':
-        feature_query = f"SELECT SK_ID_CURR, {selected_global_feature}, {selected_categorical_feature} FROM train_df_debug"
+
+    pass_query = False
+    # Build the query based on the provided columns
+    if selected_global_feature is None and selected_categorical_feature is None and selected_split_feature is None:
+        pass_query = True
+    elif selected_categorical_feature is None and selected_split_feature is None:
+        query = f"SELECT {'SK_ID_CURR'}, {selected_global_feature} FROM {'train_df_debug'}"
+    elif selected_split_feature is None:
+        query = f"SELECT {'SK_ID_CURR'}, {selected_global_feature}, {selected_categorical_feature} FROM {'train_df_debug'}"
     else:
-        feature_query = f"SELECT SK_ID_CURR, {selected_global_feature} FROM train_df_debug"
-    feature_df = pd.read_sql_query(feature_query, conn)
+        query = f"SELECT {'SK_ID_CURR'}, {selected_global_feature}, {selected_categorical_feature}, {selected_split_feature} FROM {'train_df_debug'}"
+
+    # Execute the query and read the result into a DataFrame
+    if pass_query:
+        df = pd.DataFrame()
+    else:
+        df = pd.read_sql_query(query, conn)
+
+    # Close the connection
     conn.close()
-    return feature_df
+
+    st.session_state['client_comparison']['data'] = df
+
+def update_selected_features(selected_global_feature: str, selected_categorical_feature: str, selected_split_feature: str):
+    st.session_state['client_comparison']['selected_global_feature'] = selected_global_feature
+    st.session_state['client_comparison']['selected_categorical_feature'] = selected_categorical_feature
+    st.session_state['client_comparison']['selected_split_feature'] = selected_split_feature
+    for selected_feature, type in zip([selected_global_feature, selected_categorical_feature], ['categorical', 'split']):
+        if selected_feature is None:
+            st.session_state['disable_feature_violinplot'][type] = True
+        else:
+            st.session_state['disable_feature_violinplot'][type] = False
+    fetch_violinplot_data(selected_global_feature, selected_categorical_feature, selected_split_feature)
+
+
+def display_violinplot(df: pd.DataFrame, client_id: int):
+    # plot_names = ['SK_ID_CURR', 'global_feature', 'categorical_feature', 'split_feature']
+    # df = rename_columns_based_on_col_index(df, plot_names)
+    if df.shape[1] > 0:
+        df.set_index('SK_ID_CURR', inplace=True, drop=True)
+    else:
+        st.warning("Please select at least a global feature.")
+        return
+
+    if df.shape[1] == 0:
+        st.warning("Please select at least a global feature.")
+        return
+    elif df.shape[1] == 1:
+        return
+        plot_global_violin(df, client_id)
+    elif df.shape[1] == 2:
+        return
+        plot_categorical_violin(df, client_id)
+    else:
+        plot_split_violin(df, client_id)
+
+def plot_split_violin(df: pd.DataFrame, client_id: int):
+    # Index value for the point to be highlighted
+    index_value = client_id
+    global_feature = df.columns[0]
+    categorical_feature = df.columns[1]
+    split_feature = df.columns[2]
+    palette = generate_palette_without_gold(2)
+    client_color = palette[0] if df[split_feature][index_value] == df[split_feature].unique()[0] else palette[1]
+    client_line_color = 'Gold'
+
+    fig = go.Figure()
+
+    for split, side, color in zip(df[split_feature].unique(), ['negative', 'positive'], palette):
+        fig.add_trace(go.Violin(
+            x=df[categorical_feature][ df[split_feature] == split ],
+            y=df[global_feature][ df[split_feature] == split ],
+            legendgroup=str(split), scalegroup=str(split), name=str(split), side=side, line_color=color, box_visible=True
+        ))
+    fig.update_traces(meanline_visible=True, points='all', jitter=0.05, scalemode='count')
+    fig.add_trace(go.Scatter(
+        x=[df[categorical_feature][index_value]], y=[df[global_feature][index_value]], name=f'Current client: ID = {index_value} | Split group = {df[split_feature][index_value]}', mode='markers', marker=dict(color=client_color, size=15, line_width=3, line_color=client_line_color)
+    ))
+    fig.update_traces(text=f'Current client: ID = {index_value} |Split group:{str(df[split_feature][index_value])}', selector=dict(type='scatter'))
+    fig.update_layout(violingap=0, violinmode='overlay', title_text='Global features distribution', yaxis_title="Global feature", xaxis_title="Categorical feature", xaxis_tickformat='.0f', xaxis_tickvals=list(df[categorical_feature].sort_values().unique()))
+    fig.update_layout(legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1, title='Split group'))
+    st.plotly_chart(fig, use_container_width=True)

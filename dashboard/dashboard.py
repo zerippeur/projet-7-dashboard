@@ -7,7 +7,7 @@ from sqlalchemy import create_engine, text
 from dashboard_functions import display_credit_result, plot_gauge, predict_credit_risk, get_client_infos
 from dashboard_functions import display_built_in_global_feature_importance, get_built_in_global_feature_importance
 from dashboard_functions import initiate_shap_explainer, get_shap_feature_importance, display_shap_feature_importance
-from dashboard_functions import fetch_data, fetch_categorical_features, display_histogram_chart, fetch_split_features
+from dashboard_functions import fetch_data, display_histogram_chart, fetch_cat_and_split_features, fetch_violinplot_data, display_violinplot, update_selected_features
 from streamlit_shap import st_shap
 import numpy as np
 
@@ -27,8 +27,6 @@ if 'client_id' not in st.session_state:
 if 'feature_importance' not in st.session_state:
     st.session_state['feature_importance'] = get_built_in_global_feature_importance()
 
-available_importance_types = list(st.session_state['feature_importance']['feature_importance'].keys())
-
 if 'shap_explainer_initiated' not in st.session_state:
     st.session_state['shap_explainer_initiated'] = 'Not initiated'
 
@@ -45,27 +43,43 @@ if 'shap' not in st.session_state:
         }
     }
 
+# if 'disable_feature_violinplot' not in st.session_state:
+#     st.session_state['disable_feature_violinplot'] = {
+#         'secondary': True,
+#         'tertiary': True
+#     }
+
+if 'client_comparison' not in st.session_state:
+    st.session_state['client_comparison'] = {
+        'data': pd.DataFrame()
+    }
+
+if 'selected_global_feature' not in st.session_state['client_comparison']:
+    st.session_state['client_comparison']['global'] = None
+if 'selected_categorical_feature' not in st.session_state['client_comparison']:
+    st.session_state['client_comparison']['categorical'] = None
+if 'selected_split_feature' not in st.session_state['client_comparison']:
+    st.session_state['client_comparison']['split'] = None
+
+available_importance_types = list(st.session_state['feature_importance']['feature_importance'].keys())
 importance_scale = ['Global', 'Local']
 available_explainer_types = ['Built-in', 'Shap']
-
-# if 'available_features' not in st.session_state:
-#     st.session_state['available_features'] = fetch_feature_and_group_values()
 
 client_id = st.sidebar.number_input(
     label='Client ID', min_value=0, max_value=1000000, value=None,
     step=1, format='%i', placeholder='Enter client ID'    
 )
-submit_id = st.sidebar.button('Submit client ID', key='submit_id')
-if submit_id:
+
+def submit_client_id(client_id: int):
     st.session_state['client_id'] = client_id
+submit_id = st.sidebar.button('Submit client ID', on_click=submit_client_id(client_id), key='submit_id')
 
 
-shap_initiation = st.sidebar.button('Initiate Shap explainer', key='initiate_shap_explainer', disabled=st.session_state['shap_explainer_initiated'] == 'Initiated')
-if shap_initiation:
-    initiate_shap_explainer()
-    st.session_state['shap_explainer_initiated'] = 'Initiated'
-    # refresh app
-    st.rerun()
+shap_initiation = st.sidebar.button('Initiate Shap explainer', key='initiate_shap_explainer', on_click=initiate_shap_explainer, disabled=st.session_state['shap_explainer_initiated'] == 'Initiated')
+# if shap_initiation:
+#     initiate_shap_explainer()
+#     st.session_state['shap_explainer_initiated'] = 'Initiated'
+#     st.rerun()
 
 with tab1:
     st.write('Current client ID:', st.session_state['client_id'])
@@ -88,10 +102,7 @@ with tab2:
 
         model_type = st.session_state['feature_importance']['model_type']
 
-        if st.session_state['feature_importance']['model_type'] == 'XGBClassifier':
-            importance_type = st.radio("Select importance type:", available_importance_types, index=0, horizontal=True)
-        elif st.session_state['feature_importance']['model_type'] == 'RandomForestClassifier':
-            pass
+        importance_type = st.radio("Select importance type:", available_importance_types, index=0, horizontal=True)
 
         nb_features = st.number_input(
             label='Features nb', min_value=0, max_value=30, value=20,
@@ -102,10 +113,9 @@ with tab2:
     elif explainer == 'Shap':
         st.markdown('### Shap feature importance')
 
-        if st.session_state.shap_explainer_initiated == 'Not initiated':
+        if st.session_state['shap_explainer_initiated'] == 'Not initiated':
             st.write('Please initiate Shap explainer in the sidebar section.')
-
-        if st.session_state.shap_explainer_initiated == 'Initiated':
+        else:
             feature_scale = st.radio('Select shap feature importance scale', importance_scale, index=0, horizontal=True)
             if feature_scale == 'Global':
                 nb_features = st.number_input(
@@ -126,39 +136,51 @@ with tab3:
 
     if st.session_state['client_id'] is None:
         st.write('Please enter a client ID in the sidebar section.')
+        selected_global_feature, selected_categorical_feature, selected_split_feature = None, None, None
     else:
         importance_type = st.radio("Order available feature by feature importance type:", available_importance_types, index=0, horizontal=True)
+        global_features = [key for key, _ in sorted(st.session_state['feature_importance']['feature_importance'][importance_type].items(), key=lambda item: item[1], reverse=True)]
+        categorical_features, split_features = fetch_cat_and_split_features(global_features)
+
         st.session_state['available_features'] = {
-            'global_features': [key for key, _ in sorted(st.session_state['feature_importance']['feature_importance'][importance_type].items(), key=lambda item: item[1], reverse=True)],
-            'categorical_features': fetch_categorical_features(st.session_state['feature_importance']['feature_importance'][importance_type])
+            'global_features': global_features,
+            'categorical_features': categorical_features,
+            'split_features': split_features
         }
 
-        selected_global_feature = st.selectbox('Select Global Feature (Int/Float)', st.session_state['available_features']['global_features'])
-        selected_categorical_feature = st.selectbox('Select Categorical Feature for Grouping', [''] + st.session_state['available_features']['categorical_features'])
         
-        # Fetch data based on user input
-        df, grouped_data, group_values = fetch_data(selected_global_feature, selected_categorical_feature)
+        with st.container(border=True):
+            col1, col2, col3 = st.columns(3)
+        col1.subheader('Global', divider='red')
+        col1.caption('Main feature for global comparison')
+        col1.caption('y-axis scale - Mandatory')
+        col2.subheader('Categories', divider='red')
+        col2.caption('Second feature for categories')
+        col2.caption('x-axis groups - Optionnal')
+        col3.subheader('Splits', divider='red')
+        col3.caption('Third feature for categories split')
+        col3.caption('violin sides - Optionnal')
 
-        selected_aggregation = st.checkbox('Use Median instead of Mean')
-        selected_client = st.session_state['client_id']
+        st.session_state['client_comparison']['global'] = col1.selectbox('GLOBAL FEATURE', [None] + global_features, index=st.session_state['client_comparison']['global'])
 
-        draw_comparison_chart = st.button('Draw client comparison chart', key='client_comparison')
-        if draw_comparison_chart:
-            display_histogram_chart(df, selected_global_feature, grouped_data, group_values, client_id, selected_aggregation, selected_categorical_feature)
+        if st.session_state['client_comparison']['global'] is None:
+            st.session_state['client_comparison']['categorical'] = None
+            st.session_state['client_comparison']['split'] = None
+        else:
+            st.session_state['client_comparison']['categorical'] = col2.selectbox('CATEGORICAL FEATURE', [None] + categorical_features, index=st.session_state['client_comparison']['categorical'])
+            if st.session_state['client_comparison']['categorical'] is None:
+                st.session_state['client_comparison']['split'] = None
+            else:
+                st.session_state['client_comparison']['split'] = col3.selectbox('SPLIT FEATURE', [None] + split_features, index=st.session_state['client_comparison']['split'])
+
+        fetch_violinplot_data(st.session_state['client_comparison']['global'], st.session_state['client_comparison']['categorical'], st.session_state['client_comparison']['split'])
+        # display_violin_plot(df, client_id=st.session_state['client_id'])
+        show_data = st.expander('Show selected data')
+        show_data.write(st.session_state['client_comparison']['data'])
+        display_violinplot(st.session_state['client_comparison']['data'], st.session_state['client_id'])
 
 with tab4:
     st.markdown('## Debug')
     st.write('Current client ID:', st.session_state['client_id'])
 
     st.markdown('### No active debug')
-
-    if st.session_state['client_id'] is None:
-        st.write('Please enter a client ID in the sidebar section.')
-    else:
-        importance_type = st.radio("Order available feature by feature importance type:", available_importance_types, index=0, horizontal=True, key='importance_type_debug')
-        st.session_state['available_features'] = {
-            'global_features': [key for key, _ in sorted(st.session_state['feature_importance']['feature_importance'][importance_type].items(), key=lambda item: item[1], reverse=True)],
-            'categorical_features': fetch_categorical_features(st.session_state['feature_importance']['feature_importance'][importance_type]),
-            'split_features': fetch_split_features(st.session_state['feature_importance']['feature_importance'][importance_type])
-        }
-        st.write(st.session_state['available_features']['global_features'], st.session_state['available_features']['categorical_features'], st.session_state['available_features']['split_features'])
