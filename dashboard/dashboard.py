@@ -7,7 +7,7 @@ from sqlalchemy import create_engine, text
 from dashboard_functions import display_credit_result, plot_gauge, predict_credit_risk, get_client_infos
 from dashboard_functions import display_built_in_global_feature_importance, get_built_in_global_feature_importance
 from dashboard_functions import initiate_shap_explainer, get_shap_feature_importance, display_shap_feature_importance
-from dashboard_functions import fetch_data, display_histogram_chart, fetch_cat_and_split_features, fetch_violinplot_data, display_violinplot, update_selected_features
+from dashboard_functions import fetch_data, display_histogram_chart, fetch_cat_and_split_features, fetch_violinplot_data, display_violinplot, update_selected_features, interactive_plot_test
 from streamlit_shap import st_shap
 import numpy as np
 
@@ -160,7 +160,7 @@ with tab3:
         col3.subheader('Splits', divider='red')
         col3.caption('Third feature for categories split')
         col3.caption('violin sides - Optionnal')
-
+ 
         st.session_state['client_comparison']['global'] = col1.selectbox('GLOBAL FEATURE', [None] + global_features, index=st.session_state['client_comparison']['global'])
 
         if st.session_state['client_comparison']['global'] is None:
@@ -171,7 +171,7 @@ with tab3:
             if st.session_state['client_comparison']['categorical'] is None:
                 st.session_state['client_comparison']['split'] = None
             else:
-                st.session_state['client_comparison']['split'] = col3.selectbox('SPLIT FEATURE', [None] + split_features, index=st.session_state['client_comparison']['split'])
+                st.session_state['client_comparison']['split'] = col3.selectbox('SPLIT FEATURE', [None] + [split_feature for split_feature in split_features if split_feature != st.session_state['client_comparison']['categorical']], index=st.session_state['client_comparison']['split'])
 
         fetch_violinplot_data(st.session_state['client_comparison']['global'], st.session_state['client_comparison']['categorical'], st.session_state['client_comparison']['split'])
         # display_violin_plot(df, client_id=st.session_state['client_id'])
@@ -183,4 +183,6 @@ with tab4:
     st.markdown('## Debug')
     st.write('Current client ID:', st.session_state['client_id'])
 
-    st.markdown('### No active debug')
+    # st.markdown('### No active debug')
+
+    interactive_plot_test()

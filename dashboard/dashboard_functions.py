@@ -65,6 +65,22 @@ def generate_palette_without_gold(num_groups):
     
     return selected_colors
 
+def generate_reduced_palette_without_gold(num_groups):
+    # Define custom colors without 'Gold'
+    custom_colors = ['MidnightBlue', 'Steelblue', 'Darkturquoise', 'Firebrick', 'Maroon']
+
+    # If the number of groups is less than or equal to the length of custom_colors, use them directly
+    if num_groups <= len(custom_colors):
+        # Calculate the indices to select colors centered around 'Paleturquoise'
+        start_index = max(0, len(custom_colors) // 2 - (num_groups - 1) // 2)
+        end_index = min(len(custom_colors), start_index + num_groups)
+        selected_colors = custom_colors[start_index:end_index]
+    else:
+        # If the number of groups is greater than the length of custom_colors, create a blend palette
+        selected_colors = sns.blend_palette(custom_colors, num_groups)
+    
+    return selected_colors
+
 def rename_columns_based_on_col_index(df, realnames):
     # Rename columns based on realnames list
     num_columns = min(len(df.columns), len(realnames))
@@ -349,6 +365,11 @@ def fetch_cat_and_split_features(global_features):
         cursor.execute(f"SELECT COUNT(DISTINCT {column_name}) FROM train_df_debug")
         num_distinct_values = cursor.fetchone()[0]
         return num_distinct_values == 2
+    
+    def has_more_than_7_unique_values(column_name):
+        cursor.execute(f"SELECT COUNT(DISTINCT {column_name}) FROM train_df_debug")
+        num_distinct_values = cursor.fetchone()[0]
+        return num_distinct_values > 7
 
     # Filter out features with data type 'int' (assuming they are categorical)
     categorical_features = features_df[features_df['type'] == 'INTEGER']['name'].tolist()
@@ -357,7 +378,7 @@ def fetch_cat_and_split_features(global_features):
     categorical_features = [feature for feature in categorical_features if feature not in ['index', 'SK_ID_CURR']]
 
     # Sort categorical features according to the order of global features
-    ordered_categorical_features = [feature for feature in global_features if feature in categorical_features]
+    ordered_categorical_features = [feature for feature in global_features if (feature in categorical_features and not has_more_than_7_unique_values(feature))]
 
     # Insert 'TARGET' after an empty string at the beginning of the list
     ordered_categorical_features.insert(0, 'TARGET')
@@ -422,7 +443,7 @@ def display_histogram_chart(df, selected_global_feature, grouped_data, group_val
         title = f'Stacked histogram chart for {selected_global_feature}'
 
     # Set Seaborn style to dark background
-    sns.set(style="darkgrid")
+    sns.set_theme(style="darkgrid")
 
     # Display histogram chart(s)
     if not df.empty:
@@ -522,22 +543,18 @@ def display_violinplot(df: pd.DataFrame, client_id: int):
         st.warning("Please select at least a global feature.")
         return
     elif df.shape[1] == 1:
-        return
         plot_global_violin(df, client_id)
     elif df.shape[1] == 2:
-        return
         plot_categorical_violin(df, client_id)
     else:
         plot_split_violin(df, client_id)
 
 def plot_split_violin(df: pd.DataFrame, client_id: int):
-    # Index value for the point to be highlighted
-    index_value = client_id
     global_feature = df.columns[0]
     categorical_feature = df.columns[1]
     split_feature = df.columns[2]
     palette = generate_palette_without_gold(2)
-    client_color = palette[0] if df[split_feature][index_value] == df[split_feature].unique()[0] else palette[1]
+    client_color = palette[0] if df[split_feature][client_id] == df[split_feature].unique()[0] else palette[1]
     client_line_color = 'Gold'
 
     fig = go.Figure()
@@ -548,11 +565,95 @@ def plot_split_violin(df: pd.DataFrame, client_id: int):
             y=df[global_feature][ df[split_feature] == split ],
             legendgroup=str(split), scalegroup=str(split), name=str(split), side=side, line_color=color, box_visible=True
         ))
-    fig.update_traces(meanline_visible=True, points='all', jitter=0.05, scalemode='count')
+    fig.update_traces(meanline_visible=True, points='all', jitter=0.05, scalemode='count', marker=dict(size=1.5))
     fig.add_trace(go.Scatter(
-        x=[df[categorical_feature][index_value]], y=[df[global_feature][index_value]], name=f'Current client: ID = {index_value} | Split group = {df[split_feature][index_value]}', mode='markers', marker=dict(color=client_color, size=15, line_width=3, line_color=client_line_color)
+        x=[df[categorical_feature][client_id]], y=[df[global_feature][client_id]], name=f'Current client: ID = {client_id} | Split group = {df[split_feature][client_id]}', mode='markers', marker=dict(color=client_color, size=15, line_width=3, line_color=client_line_color)
     ))
-    fig.update_traces(text=f'Current client: ID = {index_value} |Split group:{str(df[split_feature][index_value])}', selector=dict(type='scatter'))
-    fig.update_layout(violingap=0, violinmode='overlay', title_text='Global features distribution', yaxis_title="Global feature", xaxis_title="Categorical feature", xaxis_tickformat='.0f', xaxis_tickvals=list(df[categorical_feature].sort_values().unique()))
-    fig.update_layout(legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1, title='Split group'))
+    fig.update_traces(text=f'Current client: ID = {client_id} | Split group:{str(df[split_feature][client_id])}', selector=dict(type='scatter'))
+    fig.update_layout(violingap=0, violinmode='overlay', title_text='Client comparison', yaxis_title=f"Global feature: {global_feature}", xaxis_title=f"Categorical feature: {categorical_feature}", xaxis_tickformat='.0f', xaxis_tickvals=list(df[categorical_feature].sort_values().unique()))
+    fig.update_layout(legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1, title=f'Split feature: {split_feature}'))
     st.plotly_chart(fig, use_container_width=True)
+
+def plot_categorical_violin(df: pd.DataFrame, client_id: int):
+    global_feature = df.columns[0]
+    categorical_feature = df.columns[1]
+    palette = generate_palette_without_gold(len(df[categorical_feature].unique()))
+    client_color = 'Gold'
+
+    fig = go.Figure()
+    for cat, color in zip(df[categorical_feature].sort_values().unique(), palette):
+        fig.add_trace(go.Violin(
+            x=df[categorical_feature][ df[categorical_feature] == cat ],
+            y=df[global_feature][ df[categorical_feature] == cat ],
+            legendgroup=str(cat), scalegroup=str(cat), name=str(cat), line_color=color, box_visible=True
+        ))
+    fig.update_traces(meanline_visible=True, points='all', jitter=0.05, scalemode='count', marker=dict(size=1.5))
+    fig.add_trace(go.Scatter(
+        x=[df[categorical_feature][client_id]], y=[df[global_feature][client_id]], name=f'Current client: ID = {client_id}', mode='markers', marker=dict(color=client_color, size=15)
+    ))
+    fig.update_traces(text=f'Current client: ID = {client_id}', selector=dict(type='scatter'))
+    fig.update_layout(violingap=0, violinmode='overlay', title_text='Client comparison', yaxis_title=f"Global feature: {global_feature}", xaxis_title=f"Categorical feature: {categorical_feature}", xaxis_tickformat='.0f', xaxis_tickvals=list(df[categorical_feature].sort_values().unique()))
+    fig.update_layout(legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1, title='Categories'))
+    st.plotly_chart(fig, use_container_width=True)
+
+def plot_global_violin(df: pd.DataFrame, client_id: int):
+    global_feature = df.columns[0]
+    color = 'Paleturquoise'
+    client_color = 'Gold'
+
+    fig = go.Figure()
+    fig.add_trace(go.Violin(
+        y=df[global_feature],
+        legendgroup=global_feature, scalegroup=global_feature, name=global_feature, line_color=color, box_visible=True
+    ))
+    fig.update_traces(meanline_visible=True, points='all', jitter=0.05, scalemode='count', marker=dict(size=1.5))
+    fig.add_trace(go.Scatter(
+        x=[global_feature], y=[df[global_feature][client_id]], name=f'Current client: ID = {client_id}', mode='markers', marker=dict(color=client_color, size=15)
+    ))
+    fig.update_traces(text=f'Current client: ID = {client_id}', selector=dict(type='scatter'))
+    fig.update_layout(violingap=0, violinmode='overlay', title_text='Client comparison', xaxis_title=f"Global feature: {global_feature}")
+    fig.update_layout(legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1, title='Global feature'))
+    st.plotly_chart(fig, use_container_width=True)
+
+def interactive_plot_test():
+    # Sample data
+    x = np.random.rand(100)
+    y = np.random.rand(100)
+
+    # Create a Plotly figure
+    fig = go.Figure(data=go.Scatter(x=x, y=y, mode='markers'))
+
+    # Add a dropdown menu to the figure
+    fig.update_layout(
+        updatemenus=[
+            dict(
+                buttons=[
+                    dict(
+                        args=[{'marker.size': 10}],
+                        label="Size: Small",
+                        method="restyle"
+                    ),
+                    dict(
+                        args=[{'marker.size': 20}],
+                        label="Size: Medium",
+                        method="restyle"
+                    ),
+                    dict(
+                        args=[{'marker.size': 30}],
+                        label="Size: Large",
+                        method="restyle"
+                    ),
+                ],
+                direction="down",
+                pad={"r": 10, "t": 10},
+                showactive=True,
+                x=0.05,
+                xanchor="left",
+                y=1.1,
+                yanchor="top"
+            ),
+        ]
+    )
+
+    # Display the Plotly figure with Streamlit
+    st.plotly_chart(fig)
