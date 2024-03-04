@@ -267,14 +267,8 @@ def get_built_in_global_feature_importance(api_url="http://127.0.0.1:8000/global
 # Function to display feature importance
 def display_built_in_global_feature_importance(model_type, nb_features, importance_type)-> None:
     st.markdown("### Feature importance")
-    if model_type == 'XGBClassifier':
+    if model_type in ['XGBClassifier', 'RandomForestClassifier', 'LGBMClassifier']:
         feature_importance = st.session_state['feature_importance']['feature_importance'][importance_type]
-        importance = importance_type
-    elif model_type == 'RandomForestClassifier':
-        feature_importance = st.session_state['feature_importance']['feature_importance']
-        importance = importance_type
-    elif model_type == 'LGBMClassifier':
-        feature_importance = st.session_state['feature_importance']['feature_importance']
         importance = importance_type
     else:
         st.error("Error: Unsupported model type")
@@ -285,10 +279,14 @@ def display_built_in_global_feature_importance(model_type, nb_features, importan
     # Create horizontal bar plot
     plt.clf()
     fig = plt.figure(figsize=(10, 6*nb_features/10))
-    plt.barh(range(len(top_features) - 1, -1, -1), [x[1] for x in top_features], tick_label=[x[0] for x in top_features])
-    plt.xlabel(f'{importance}')
-    plt.ylabel('Feature')
-    plt.title(f'Top {nb_features} Features - {model_type}')
+    bars = plt.barh(range(len(top_features) - 1, -1, -1), [x[1] for x in top_features], tick_label=[x[0] for x in top_features])
+    plt.xlabel(f'{importance.capitalize()} score', weight='bold', fontsize=15)
+    plt.ylabel('Feature', weight='bold', fontsize=15)
+    plt.title(f'Top {nb_features} Features - {model_type}', weight='bold', fontsize=20)
+    for bar, value in zip(bars, [x[1] for x in top_features]):
+        plt.text(bar.get_width(), bar.get_y() + bar.get_height()/2, f'{value:.2f}', va='center', weight='bold', fontsize=12)
+    plt.xticks(fontweight='bold')
+    plt.yticks(fontweight='bold')
     st.pyplot(fig)
 
 # Function to get shap feature importance from API
@@ -508,6 +506,7 @@ def plot_split_violin(df: pd.DataFrame, client_id: int):
     client_color = palette[0] if df[split_feature][client_id] == df[split_feature].unique()[0] else palette[1]
     client_line_color = 'Gold'
 
+    plt.clf()
     fig = go.Figure()
 
     for split, side, color in zip(df[split_feature].unique(), ['negative', 'positive'], palette):
@@ -531,6 +530,7 @@ def plot_categorical_violin(df: pd.DataFrame, client_id: int):
     palette = generate_palette_without_gold(len(df[categorical_feature].unique()))
     client_color = 'Gold'
 
+    plt.clf()
     fig = go.Figure()
     for cat, color in zip(df[categorical_feature].sort_values().unique(), palette):
         fig.add_trace(go.Violin(
@@ -552,6 +552,7 @@ def plot_global_violin(df: pd.DataFrame, client_id: int):
     color = 'Paleturquoise'
     client_color = 'Gold'
 
+    plt.clf()
     fig = go.Figure()
     fig.add_trace(go.Violin(
         y=df[global_feature],
@@ -565,46 +566,3 @@ def plot_global_violin(df: pd.DataFrame, client_id: int):
     fig.update_layout(violingap=0, violinmode='overlay', title_text='Client comparison')
     fig.update_layout(legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1, title=f'Global feature: {global_feature}'))
     st.plotly_chart(fig, use_container_width=True)
-
-def interactive_plot_test():
-    # Sample data
-    x = np.random.rand(100)
-    y = np.random.rand(100)
-
-    # Create a Plotly figure
-    fig = go.Figure(data=go.Scatter(x=x, y=y, mode='markers'))
-
-    # Add a dropdown menu to the figure
-    fig.update_layout(
-        updatemenus=[
-            dict(
-                buttons=[
-                    dict(
-                        args=[{'marker.size': 10}],
-                        label="Size: Small",
-                        method="restyle"
-                    ),
-                    dict(
-                        args=[{'marker.size': 20}],
-                        label="Size: Medium",
-                        method="restyle"
-                    ),
-                    dict(
-                        args=[{'marker.size': 30}],
-                        label="Size: Large",
-                        method="restyle"
-                    ),
-                ],
-                direction="down",
-                pad={"r": 10, "t": 10},
-                showactive=True,
-                x=0.05,
-                xanchor="left",
-                y=1.1,
-                yanchor="top"
-            ),
-        ]
-    )
-
-    # Display the Plotly figure with Streamlit
-    st.plotly_chart(fig)

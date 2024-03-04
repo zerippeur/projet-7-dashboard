@@ -102,7 +102,7 @@ with tab2:
         st.subheader('Display settings', divider='red')
         explainer = st.radio('Select explainer type', available_explainer_types, index=0, horizontal=True)
         nb_features = st.slider(
-            label='Features to display', min_value=1, max_value=len(st.session_state['feature_importance']['feature_importance']['weight']), value=20,
+            label='Features to display', min_value=1, max_value=len(st.session_state['feature_importance']['feature_importance'][available_importance_types[0]]), value=20,
             step=1, format='%i'
         )
 
