@@ -4,7 +4,7 @@ from dashboard_functions import toggle_debug_mode
 from dashboard_functions import submit_client_id, predict_credit_risk
 from dashboard_functions import display_built_in_global_feature_importance, get_built_in_global_feature_importance
 from dashboard_functions import initiate_shap_explainer, display_shap_feature_importance
-from dashboard_functions import fetch_cat_and_split_features, fetch_violinplot_data, display_violinplot
+from dashboard_functions import update_available_features, update_violinplot_data, display_violinplot
 
 model_threshold = .5
 
@@ -21,9 +21,6 @@ if 'client_id' not in st.session_state:
 
 if 'feature_importance' not in st.session_state:
     st.session_state['feature_importance'] = get_built_in_global_feature_importance()
-
-# if 'shap_explainer_initiated' not in st.session_state:
-#     st.session_state['shap_explainer_initiated'] = 'Not initiated'
 
 if 'shap' not in st.session_state:
     st.session_state['shap'] = {
@@ -48,15 +45,12 @@ if 'shap' not in st.session_state:
 
 if 'client_comparison' not in st.session_state:
     st.session_state['client_comparison'] = {
-        'data': pd.DataFrame()
+        'data': pd.DataFrame(),
+        'global': None,
+        'categorical': None,
+        'split': None,
+        'limit': None
     }
-
-if 'selected_global_feature' not in st.session_state['client_comparison']:
-    st.session_state['client_comparison']['global'] = None
-if 'selected_categorical_feature' not in st.session_state['client_comparison']:
-    st.session_state['client_comparison']['categorical'] = None
-if 'selected_split_feature' not in st.session_state['client_comparison']:
-    st.session_state['client_comparison']['split'] = None
 
 available_importance_types = list(st.session_state['feature_importance']['feature_importance'].keys())
 importance_scale = ['Global', 'Local']
@@ -112,8 +106,8 @@ with tab2:
 
             model_type = st.session_state['feature_importance']['model_type']
 
-            importance_type = st.radio("Select importance type:", available_importance_types, index=0, horizontal=True)
-            display_built_in_global_feature_importance(model_type, nb_features, importance_type)
+            st.session_state['tab_2_selected_importance_type'] = st.radio("Select importance type:", available_importance_types, index=0, horizontal=True)
+            display_built_in_global_feature_importance(model_type, nb_features, st.session_state['tab_2_selected_importance_type'])
 
     elif explainer == 'Shap':
         with st.container(border=True):
@@ -142,18 +136,9 @@ with tab3:
 
     if st.session_state['client_id'] is None:
         st.warning('Please enter a client ID in the sidebar section.')
-        selected_global_feature, selected_categorical_feature, selected_split_feature = None, None, None
     else:
-        importance_type = st.radio("Order available feature by feature importance type:", available_importance_types, index=0, horizontal=True)
-        global_features = [key for key, _ in sorted(st.session_state['feature_importance']['feature_importance'][importance_type].items(), key=lambda item: item[1], reverse=True)]
-        categorical_features, split_features = fetch_cat_and_split_features(global_features, debug=st.session_state['debug_mode'])
-
-        st.session_state['available_features'] = {
-            'global_features': global_features,
-            'categorical_features': categorical_features,
-            'split_features': split_features
-        }
-
+        with st.container(border=True):
+            st.session_state['tab_3_selected_importance_type'] = st.radio("Order available feature by feature importance type:", available_importance_types, index=0, horizontal=True, on_change=update_available_features)
         
         with st.container(border=True):
             col1, col2, col3 = st.columns(3)
@@ -167,23 +152,24 @@ with tab3:
         col3.caption('Third feature for categories split')
         col3.caption('violin sides - Optionnal')
  
-        st.session_state['client_comparison']['global'] = col1.selectbox('GLOBAL FEATURE', [None] + global_features, index=st.session_state['client_comparison']['global'])
+        update_available_features()
+
+        st.session_state['client_comparison']['global'] = col1.selectbox('GLOBAL FEATURE', [None] + st.session_state['available_features']['global_features'], index=0, on_change=update_available_features)
 
         if st.session_state['client_comparison']['global'] is None:
             st.session_state['client_comparison']['categorical'] = None
             st.session_state['client_comparison']['split'] = None
         else:
-            st.session_state['client_comparison']['categorical'] = col2.selectbox('CATEGORICAL FEATURE', [None] + categorical_features, index=st.session_state['client_comparison']['categorical'])
+            st.session_state['client_comparison']['categorical'] = col2.selectbox('CATEGORICAL FEATURE', [None] + st.session_state['available_features']['categorical_features'], index=0, on_change=update_available_features)
             if st.session_state['client_comparison']['categorical'] is None:
                 st.session_state['client_comparison']['split'] = None
             else:
-                st.session_state['client_comparison']['split'] = col3.selectbox('SPLIT FEATURE', [None] + [split_feature for split_feature in split_features if split_feature != st.session_state['client_comparison']['categorical']], index=st.session_state['client_comparison']['split'])
+                st.session_state['client_comparison']['split'] = col3.selectbox('SPLIT FEATURE', [None] + [split_feature for split_feature in st.session_state['available_features']['split_features'] if split_feature != st.session_state['client_comparison']['categorical']], index=0, on_change=update_available_features)
 
-        fetch_violinplot_data(st.session_state['client_comparison']['global'], st.session_state['client_comparison']['categorical'], st.session_state['client_comparison']['split'], debug=st.session_state['debug_mode'])
-        # display_violin_plot(df, client_id=st.session_state['client_id'])
+        update_violinplot_data()
         show_data = st.expander('Show selected data')
         show_data.write(st.session_state['client_comparison']['data'])
-        display_violinplot(st.session_state['client_comparison']['data'], st.session_state['client_id'])
+        display_violinplot()
 
 with tab4:
     st.write('Current client ID:', st.session_state['client_id'])

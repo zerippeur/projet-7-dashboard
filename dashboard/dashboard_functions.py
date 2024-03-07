@@ -18,6 +18,10 @@ import plotly.graph_objects as go
 # Function to toggle debug_mode
 def toggle_debug_mode():
     st.session_state['debug_mode'] = not st.session_state['debug_mode']
+    st.session_state['client_id'] = None
+    st.session_state['shap']['initiated'] = False
+    st.session_state['shap']['Global']['loaded'] = False
+    st.session_state['shap']['Local']['loaded'] = False
 
 # Function to submit client id
 def submit_client_id(client_id: int):
@@ -126,7 +130,7 @@ def balance_classes(X: pd.DataFrame, y: pd.Series, method: Literal['smote', 'ran
     
     pipeline = Pipeline([('sampler', sampler)])
     X_resampled, y_resampled = pipeline.named_steps['sampler'].fit_resample(X, y)
-    # return pipeline.fit_resample(X, y)
+
     return X_resampled, y_resampled
 
 def get_data_for_shap_initiation(debug: bool=False)-> pd.DataFrame:
@@ -152,86 +156,77 @@ def get_data_for_shap_initiation(debug: bool=False)-> pd.DataFrame:
 def initiate_shap_explainer(api_url="http://127.0.0.1:8000/initiate_shap_explainer")-> None:
     debug = st.session_state['debug_mode']
     data_for_shap_initiation = get_data_for_shap_initiation(debug=debug)
-    json_payload = data_for_shap_initiation.to_dict(orient='index')
-    response = requests.post(api_url, json=json_payload)
+    response = requests.post(api_url)
     if response.status_code == 200:
-        # st.session_state.shap_explainer_initiated = True
         st.success("Shap explainer initiated successfully")
         st.session_state['shap']['initiated'] = True
         st.session_state['shap']['Global']['features'] = data_for_shap_initiation
     else:
         st.error("Error initiating shap explainer")
-        # st.session_state.shap_explainer_initiated = False
 
 
 # TAB 1 FUNCTIONS (CREDIT RISK PREDICTION)
 
-# Function to plot a gauge
-def plot_gauge(value, prediction)-> None:
-    colors = ['Darkturquoise', 'Paleturquoise', 'Gold', 'Coral', 'Firebrick']
-    values = [100, 80, 60, 40, 20, 0]
-    x_axis_values = [0, 0.628, 1.256, 1.884, 2.512, 3.14]
+def new_gauge_plot(confidence, prediction, threshold, result_color)-> None:
+    fig = go.Figure(go.Indicator(
+        mode = "gauge+number+delta",
+        value = confidence*100,
+        domain = {'x': [0, 1], 'y': [0, 1]},
+        title = {'text': "Credit repayment confidence", 'font': {'size': 30}},
+        delta = {'reference': (1-threshold)*100, 'increasing': {'color': "Darkturquoise"}, 'decreasing': {'color': "Firebrick"}},
+        gauge = {
+            'axis': {'range': [None, 100], 'tickwidth': 3, 'tickfont': {'size': 20, 'color': "white"}, 'tickcolor': "white",
+                     'tickvals': [0, 20, 40, 60, 80, (1-threshold)*100, 100], 'ticktext': ['0%', '20%', '40%', '60%', '80%', f'{(1-threshold)*100:.2f}%', '100%'], 'tickangle': 0},
+            'bar': {'color': "white"},
+            'bgcolor': "white",
+            'borderwidth': 2,
+            'bordercolor': "white",
+            'steps': [
+                {'range': [0, (1-threshold)*100 - 5], 'color': 'Firebrick'},
+                {'range': [(1-threshold)*100 - 5, (1-threshold)*100], 'color': 'Coral'},
+                {'range': [(1-threshold)*100, 100], 'color': 'Darkturquoise'},],
+            'threshold': {
+                'line': {'color': "Gold", 'width': 4},
+                'thickness': 1,
+                'value': (1-threshold)*100}},
+        number = {'font': {'size': 70, 'color': result_color}, 'suffix': ' %', 'valueformat': '.2f'}))
 
-    plt.clf()
-    fig = plt.figure(figsize=(10, 10))
-    ax = fig.add_subplot(projection='polar')
-    ax.bar(x=x_axis_values[:-1], height=0.5, width=0.63, color=colors, bottom=2, align='edge', linewidth=3, edgecolor='white')
+    # fig.update_layout(paper_bgcolor = "lavender", font = {'color': "darkblue", 'family': "Arial"})
 
-    y_areas = 2.23
-    fontsize_areas = 18
-
-    plt.annotate("SAFE", xy=(0.314,y_areas), rotation=-72, color="white", fontweight="bold", fontsize=fontsize_areas, va="center", ha="center")
-    plt.annotate("UNCERTAIN", xy=(0.942,y_areas), rotation=-36, color="white", fontweight="bold", fontsize=fontsize_areas, va="center", ha="center")
-    plt.annotate("RISKY", xy=(1.57,y_areas), color="white", fontweight="bold", fontsize=fontsize_areas, va="center", ha="center")
-    plt.annotate("VERY RISKY", xy=(2.198,y_areas), rotation=36, color="white", fontweight="bold", fontsize=fontsize_areas, va="center", ha="center")
-    plt.annotate("NOPE", xy=(2.826,y_areas), rotation=72, color="white", fontweight="bold", fontsize=fontsize_areas, va="center", ha="center")
-
-    for loc, val in zip(x_axis_values, values):
-        plt.annotate(f'{val}%', xy=(loc, 2.5), va='bottom', ha='right' if val<=40 else 'left', fontsize=14)
-
-    gauge_value = value if prediction == 0 else 100 - value
-    gauge_position = 3.14-(value*0.0314) if prediction == 0 else 3.14-((100 - value)*0.0314)
-    plt.annotate(f'{gauge_value:.2f}%', xytext=(0,0), xy=(gauge_position, 2.0),
-             arrowprops=dict(arrowstyle="wedge, tail_width=0.5", color="black", shrinkA=0),
-             bbox=dict(boxstyle="circle", facecolor="black", linewidth=2.0, ),
-             fontsize=25, color="white", ha="center", va='center', fontweight="bold"
-            )
-
-
-    plt.title("Confidence meter", loc="center", pad=20, fontsize=20, fontweight="bold")
-
-    ax.set_axis_off()
-    st.pyplot(fig)
+    st.plotly_chart(fig, use_container_width=True)
 
 # Function to display credit result
-def display_credit_result(prediction, confidence, risk_category, threshold=.5)-> None:
+def display_credit_result(prediction, confidence, risk_category, threshold=.162)-> None:
 
     risk_categories = {
         'SAFE': 'Darkturquoise',
-        'UNCERTAIN': 'Paleturquoise',
-        'RISKY': 'Gold',
-        'VERY RISKY': 'Coral',
+        'RISKY': 'Coral',
         'NOPE': 'Firebrick'
     }
 
-    font_color = risk_categories[risk_category]
-    chance_percentage = confidence * 100 if prediction == 0 else 100 - confidence * 100
-    st.markdown(f"## Credit approval: <span style='color:{font_color}'>{risk_category}</span>", unsafe_allow_html=True)
+    result_color = risk_categories[risk_category]
+    threshold_color = 'Gold'
+    # chance_percentage = confidence * 100 if prediction == 0 else 100 - confidence * 100
+    st.markdown(f"## Credit result: <span style='color:{result_color}'>{risk_category}</span>", unsafe_allow_html=True)
     st.markdown(f"#### According to our prediction model,"
-                f" you have a <span style='color:{font_color}'>{chance_percentage:.2f}%</span>"
-                " chance to repay your loan.\n"
-                f"#### Our threshold is fixed at {threshold*100:.2f}%."
+                f" you have a <span style='color:{result_color}'>{confidence*100:.2f}%</span>"
+                " chance to repay your loan without risk.\n"
+                f"#### Our threshold is fixed at <span style='color:{threshold_color}'>{(1-threshold)*100:.2f}%</span>."
                 " Please see feature importance or client informations for more information.",
                 unsafe_allow_html=True)
 
     # Display confidence as a gauge
     st.markdown("### Credit risk profile:")
-    plot_gauge(confidence * 100, prediction)
+    # plot_gauge(confidence, prediction)
+    new_gauge_plot(confidence, prediction, threshold, result_color)
 
 # Function to predict credit risk
-def predict_credit_risk(client_id: int, threshold: float = .5, api_url="http://127.0.0.1:8000/predict_from_dict", debug: bool = False)-> None:
+def predict_credit_risk(client_id: int, threshold: float = .162, api_url="http://127.0.0.1:8000/predict_from_dict", debug: bool = False)-> None:
     client_infos = get_client_infos(client_id=client_id, output='dict', debug=debug)
-    json_payload_predict_from_dict = client_infos
+    json_payload_predict_from_dict = {
+        'client_infos': client_infos,
+        'threshold': threshold
+    }
 
     response = requests.post(
         api_url, json=json_payload_predict_from_dict
@@ -264,8 +259,7 @@ def get_built_in_global_feature_importance(api_url="http://127.0.0.1:8000/global
         st.error("Error fetching feature importance from API")
         return None
 
-# Function to display feature importance
-def display_built_in_global_feature_importance(model_type, nb_features, importance_type)-> None:
+def display_built_in_global_feature_importance(model_type, nb_features, importance_type):
     st.markdown("### Feature importance")
     if model_type in ['XGBClassifier', 'RandomForestClassifier', 'LGBMClassifier']:
         feature_importance = st.session_state['feature_importance']['feature_importance'][importance_type]
@@ -273,21 +267,33 @@ def display_built_in_global_feature_importance(model_type, nb_features, importan
     else:
         st.error("Error: Unsupported model type")
         return
+    
     # Sort features by importance
-    top_features = sorted(feature_importance.items(), key=lambda x: x[1], reverse=True)[:nb_features]
+    top_features = sorted(feature_importance.items(), key=lambda x: x[1], reverse=True)[:nb_features][-1::-1]
+    
+    # Extract feature names and importance values
+    feature_names = [x[0] for x in top_features]
+    importance_values = [x[1] for x in top_features]
+    
+    # Create horizontal bar plot using Plotly
+    fig = go.Figure(go.Bar(
+        x=importance_values,
+        y=feature_names,
+        orientation='h',
+        marker=dict(color='royalblue'),  # Change the color of bars if needed
+    ))
 
-    # Create horizontal bar plot
-    plt.clf()
-    fig = plt.figure(figsize=(10, 6*nb_features/10))
-    bars = plt.barh(range(len(top_features) - 1, -1, -1), [x[1] for x in top_features], tick_label=[x[0] for x in top_features])
-    plt.xlabel(f'{importance.capitalize()} score', weight='bold', fontsize=15)
-    plt.ylabel('Feature', weight='bold', fontsize=15)
-    plt.title(f'Top {nb_features} Features - {model_type}', weight='bold', fontsize=20)
-    for bar, value in zip(bars, [x[1] for x in top_features]):
-        plt.text(bar.get_width(), bar.get_y() + bar.get_height()/2, f'{value:.2f}', va='center', weight='bold', fontsize=12)
-    plt.xticks(fontweight='bold')
-    plt.yticks(fontweight='bold')
-    st.pyplot(fig)
+    fig.update_traces(text=importance_values, textposition='outside')
+
+    fig.update_layout(
+        title=f'Top {nb_features} Features - {model_type}',
+        yaxis=dict(title='Feature', titlefont=dict(size=15), tickfont=dict(size=12)),
+        xaxis=dict(title=f'{importance.capitalize()} score', titlefont=dict(size=15), tickfont=dict(size=12)),
+        height=300*nb_features/10 + 100,  # Adjust the height based on the number of features
+
+    )
+    
+    st.plotly_chart(fig, use_container_width=True)
 
 # Function to get shap feature importance from API
 def get_shap_feature_importance(client_id: Union[int, None], scale: Literal['Global', 'Local'], api_url: str="http://127.0.0.1:8000/shap_feature_importance", debug: bool = False)-> Union[dict, None]:
@@ -434,54 +440,59 @@ def fetch_cat_and_split_features(global_features, debug: bool=False):
 
     return ordered_categorical_features, split_features
 
-def fetch_violinplot_data(selected_global_feature: str, selected_categorical_feature: str, selected_split_feature: str, debug: bool=False):
+def update_available_features():
+    importance_type = st.session_state['tab_3_selected_importance_type']
+    global_features = [key for key, _ in sorted(st.session_state['feature_importance']['feature_importance'][importance_type].items(), key=lambda item: item[1], reverse=True)]
+    categorical_features, split_features = fetch_cat_and_split_features(global_features, debug=st.session_state['debug_mode'])
+
+    st.session_state['available_features'] = {
+        'global_features': global_features,
+        'categorical_features': categorical_features,
+        'split_features': split_features
+    }
+
+def update_violinplot_data():#selected_global_feature: str, selected_categorical_feature: str, selected_split_feature: str, client_id: int, limit: int, debug: bool=False):
+
+    selected_global_feature = st.session_state['client_comparison']['global']
+    selected_categorical_feature = st.session_state['client_comparison']['categorical']
+    selected_split_feature = st.session_state['client_comparison']['split']
+    client_id = st.session_state['client_id']
+    limit = 3000
+    debug = st.session_state['debug_mode']
+
     # Retrieve data
     conn = sqlite3.connect('C:/Users/emile/DEV/WORKSPACE/projet-7-cours-oc/model/model/features/clients_infos.db')
 
     pass_query = False
+    query = ""
     # Build the query based on the provided columns
     if selected_global_feature is None and selected_categorical_feature is None and selected_split_feature is None:
         pass_query = True
-    elif selected_categorical_feature is None and selected_split_feature is None:
-        if debug:
-            query = f"SELECT SK_ID_CURR, {selected_global_feature} FROM train_df_debug"
-        else:
-            query = f"SELECT SK_ID_CURR, {selected_global_feature} FROM train_df UNION ALL SELECT SK_ID_CURR, {selected_global_feature} FROM test_df"
-    elif selected_split_feature is None:
-        if debug:
-            query = f"SELECT SK_ID_CURR, {selected_global_feature}, {selected_categorical_feature} FROM train_df_debug"
-        else:
-            query = f"SELECT SK_ID_CURR, {selected_global_feature}, {selected_categorical_feature} FROM train_df UNION ALL SELECT SK_ID_CURR, {selected_global_feature}, {selected_categorical_feature} FROM test_df"
     else:
+        selected_features = [feat for feat in [selected_global_feature, selected_categorical_feature, selected_split_feature] if feat is not None]
+        selected_features_str = ", ".join(selected_features)
+
         if debug:
-            query = f"SELECT SK_ID_CURR, {selected_global_feature}, {selected_categorical_feature}, {selected_split_feature} FROM train_df_debug"
+            query = f"SELECT SK_ID_CURR, {selected_features_str} FROM train_df_debug WHERE SK_ID_CURR != {client_id} ORDER BY RANDOM() LIMIT {limit}"
+            query_client = f"SELECT SK_ID_CURR, {selected_features_str} FROM train_df_debug WHERE SK_ID_CURR = {client_id}"
         else:
-            query = f"SELECT SK_ID_CURR, {selected_global_feature}, {selected_categorical_feature}, {selected_split_feature} FROM train_df UNION ALL SELECT SK_ID_CURR, {selected_global_feature}, {selected_categorical_feature}, {selected_split_feature} FROM test_df"
+            query = f"SELECT SK_ID_CURR, {selected_features_str} FROM train_df WHERE SK_ID_CURR != {client_id} ORDER BY RANDOM() LIMIT {limit} UNION ALL SELECT SK_ID_CURR, {selected_features_str} FROM test_df WHERE SK_ID_CURR != {client_id} ORDER BY RANDOM() LIMIT {limit}"
+            query_client = f"SELECT SK_ID_CURR, {selected_features_str} FROM train_df WHERE SK_ID_CURR = {client_id} UNION ALL SELECT SK_ID_CURR, {selected_features_str} FROM test_df WHERE SK_ID_CURR = {client_id}"
 
     # Execute the query and read the result into a DataFrame
-    if pass_query:
-        df = pd.DataFrame()
-    else:
-        df = pd.read_sql_query(query, conn)
+    df = pd.DataFrame() if pass_query else pd.read_sql_query(query, conn)
+    row_client = pd.DataFrame() if pass_query else pd.read_sql_query(query_client, conn)
+
+    concatenated_df = pd.concat([df, row_client])
 
     # Close the connection
     conn.close()
 
-    st.session_state['client_comparison']['data'] = df
+    st.session_state['client_comparison']['data'] = concatenated_df
 
-def update_selected_features(selected_global_feature: str, selected_categorical_feature: str, selected_split_feature: str):
-    st.session_state['client_comparison']['selected_global_feature'] = selected_global_feature
-    st.session_state['client_comparison']['selected_categorical_feature'] = selected_categorical_feature
-    st.session_state['client_comparison']['selected_split_feature'] = selected_split_feature
-    for selected_feature, type in zip([selected_global_feature, selected_categorical_feature], ['categorical', 'split']):
-        if selected_feature is None:
-            st.session_state['disable_feature_violinplot'][type] = True
-        else:
-            st.session_state['disable_feature_violinplot'][type] = False
-    fetch_violinplot_data(selected_global_feature, selected_categorical_feature, selected_split_feature)
-
-
-def display_violinplot(df: pd.DataFrame, client_id: int):
+def display_violinplot():
+    df = st.session_state['client_comparison']['data']
+    client_id = st.session_state['client_id']
     if df.shape[1] > 0:
         df.set_index('SK_ID_CURR', inplace=True, drop=True)
     else:
