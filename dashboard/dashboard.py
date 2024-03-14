@@ -1,15 +1,13 @@
 import pandas as pd
 import streamlit as st
-from dashboard_functions import toggle_debug_mode
+from dashboard_functions import toggle_debug_mode, get_model_threshold
 from dashboard_functions import submit_client_id, predict_credit_risk
 from dashboard_functions import display_built_in_global_feature_importance, get_built_in_global_feature_importance
 from dashboard_functions import initiate_shap_explainer, display_shap_feature_importance
 from dashboard_functions import update_available_features, update_violinplot_data, display_violinplot
 
-model_threshold = .5
-
 # streamlit run dashboard.py
-
+st.set_page_config(layout="wide")
 st.title('Credit risk prediction')
 st.markdown('Get credit risk prediction for a client based on his/her ID')
 
@@ -21,6 +19,9 @@ if 'client_id' not in st.session_state:
 
 if 'feature_importance' not in st.session_state:
     st.session_state['feature_importance'] = get_built_in_global_feature_importance()
+
+if 'threshold' not in st.session_state:
+    st.session_state['threshold'] = get_model_threshold()
 
 if 'shap' not in st.session_state:
     st.session_state['shap'] = {
@@ -77,7 +78,7 @@ with tab1:
     if st.session_state['client_id'] is not None:
         predict = st.button('Predict credit risk', key='predict')
         if predict:
-            predict_credit_risk(client_id=st.session_state['client_id'], debug=st.session_state['debug_mode'])      
+            predict_credit_risk(client_id=st.session_state['client_id'], threshold=st.session_state['threshold'], debug=st.session_state['debug_mode'])      
     else:
         st.warning('Please enter a client ID in the sidebar section.')
 

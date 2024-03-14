@@ -12,6 +12,13 @@ import numpy as np
 from streamlit_shap import st_shap
 import seaborn as sns
 import plotly.graph_objects as go
+from dotenv import load_dotenv
+import os
+from sqlalchemy import create_engine, text
+
+# ENVIRONEMENT VARIABLES
+load_dotenv('dashboard.env')
+HEROKU_DATABASE_URI = os.getenv("DATABASE_URI")
 
 # COMMON FUNCTIONS
 
@@ -28,26 +35,46 @@ def submit_client_id(client_id: int):
     st.session_state['client_id'] = client_id
 
 # Function to get client infos from id number 
-def get_client_infos(client_id: int, output: Literal['dict', 'df'] = 'df', debug: bool = False)-> Union[dict, pd.DataFrame]:
-    conn = sqlite3.connect(
-        'C:/Users/emile/DEV/WORKSPACE/projet-7-cours-oc/model/model/features/clients_infos.db'
-    )
+def get_client_infos(client_id: int, output: Literal['dict', 'df'] = 'df', debug: bool = False, db_uri: str=HEROKU_DATABASE_URI)-> Union[dict, pd.DataFrame]:
+    engine = create_engine(db_uri)
+
     if debug:
-        query = f'SELECT * FROM train_df_debug WHERE SK_ID_CURR = ? ORDER BY "index"'
-        result = pd.read_sql_query(query, conn, params=[client_id], index_col='SK_ID_CURR')
-        conn.close()
+        table_names = ['train_df_debug', 'test_df_debug']
     else:
-        query = f'SELECT * FROM train_df WHERE SK_ID_CURR = ? UNION ALL SELECT * FROM test_df WHERE SK_ID_CURR = ? ORDER BY "index"'
-        result = pd.read_sql_query(query, conn, params=[client_id, client_id], index_col='SK_ID_CURR')
-        conn.close()
+        table_names = ['train_df', 'test_df']
+
+    query = text(f'SELECT * FROM {table_names[0]} WHERE "SK_ID_CURR" = :client_id UNION ALL SELECT * FROM {table_names[1]} WHERE "SK_ID_CURR" = :client_id ORDER BY "SK_ID_CURR"')
+    with engine.connect() as conn:
+        result = pd.read_sql_query(query, conn, params={'client_id': client_id}, index_col='SK_ID_CURR')
 
     if output == 'dict':
-        model_dict = result.drop(columns=['index', 'TARGET']).to_dict(orient='index')
+        model_dict = result.drop(columns=['level_0', 'index', 'TARGET']).to_dict(orient='index')
         client_infos = model_dict[client_id]
         return client_infos
     elif output == 'df':
-        client_infos = result.drop(columns=['index', 'TARGET'])
+        client_infos = result.drop(columns=['level_0', 'index', 'TARGET'])
         return client_infos
+# def get_client_infos(client_id: int, output: Literal['dict', 'df'] = 'df', debug: bool = False, db_uri: str=HEROKU_DATABASE_URI)-> Union[dict, pd.DataFrame]:
+#     # conn = sqlite3.connect(
+#     #     'C:/Users/emile/DEV/WORKSPACE/projet-7-cours-oc/model/model/features/clients_infos.db'
+#     # )
+#     engine = create_engine(db_uri)
+#     if debug:
+#         query = f'SELECT * FROM train_df_debug WHERE SK_ID_CURR = ? ORDER BY "index"'
+#         result = pd.read_sql_query(query, engine, params=(client_id), index_col='SK_ID_CURR')
+#         # conn.close()
+#     else:
+#         query = f'SELECT * FROM train_df WHERE SK_ID_CURR = ? UNION ALL SELECT * FROM test_df WHERE SK_ID_CURR = ? ORDER BY "index"'
+#         result = pd.read_sql_query(query, engine, params=(client_id, client_id), index_col='SK_ID_CURR')
+#         # conn.close()
+
+#     if output == 'dict':
+#         model_dict = result.drop(columns=['index', 'TARGET']).to_dict(orient='index')
+#         client_infos = model_dict[client_id]
+#         return client_infos
+#     elif output == 'df':
+#         client_infos = result.drop(columns=['index', 'TARGET'])
+#         return client_infos
 
 # Function to generate accessible palettes based on the number of groups to colorize
 def generate_full_palette(num_groups):
@@ -133,20 +160,21 @@ def balance_classes(X: pd.DataFrame, y: pd.Series, method: Literal['smote', 'ran
 
     return X_resampled, y_resampled
 
-def get_data_for_shap_initiation(debug: bool=False)-> pd.DataFrame:
-    conn = sqlite3.connect(
-        'C:/Users/emile/DEV/WORKSPACE/projet-7-cours-oc/model/model/features/clients_infos.db'
-    )
+def get_data_for_shap_initiation(debug: bool=False, db_uri=HEROKU_DATABASE_URI)-> pd.DataFrame:
+    # conn = sqlite3.connect(
+    #     'C:/Users/emile/DEV/WORKSPACE/projet-7-cours-oc/model/model/features/clients_infos.db'
+    # )
+    engine = create_engine(db_uri)
     if debug:
-        query = f'SELECT * FROM train_df_debug'
-        result = pd.read_sql_query(query, conn, index_col='SK_ID_CURR')
-        conn.close()
+        query = text(f'SELECT * FROM train_df_debug')
+        result = pd.read_sql_query(query, engine, index_col='SK_ID_CURR')
+        # conn.close()
     else:
-        query = f'SELECT * FROM train_df UNION ALL SELECT * FROM test_df'
-        result = pd.read_sql_query(query, conn, index_col='SK_ID_CURR')
-        conn.close()
+        query = text(f'SELECT * FROM train_df UNION ALL SELECT * FROM test_df')
+        result = pd.read_sql_query(query, engine, index_col='SK_ID_CURR')
+        # conn.close()
 
-    X_train, y_train = result.drop(columns=['index', 'TARGET']), result['TARGET']
+    X_train, y_train = result.drop(columns=['level_0', 'index', 'TARGET']), result['TARGET']
     X_train_resampled, _ = balance_classes(X_train, y_train, method='randomundersampler')
 
     data_for_shap_initiation = X_train_resampled
@@ -166,8 +194,23 @@ def initiate_shap_explainer(api_url="http://127.0.0.1:8000/initiate_shap_explain
 
 
 # TAB 1 FUNCTIONS (CREDIT RISK PREDICTION)
+        
+def get_model_threshold(api_url="http://127.0.0.1:8000/model_threshold")-> Union[dict,None]:
+    # Replace this URL with your actual API endpoint
+    api_url = api_url
+    
+    # Send POST request to API
+    response = requests.get(api_url)
 
-def new_gauge_plot(confidence, prediction, threshold, result_color)-> None:
+    if response.status_code == 200:
+        result = response.json()
+        return result['threshold']
+    else:
+        st.error("Error fetching feature importance from API")
+        return None
+
+def new_gauge_plot(confidence, threshold, result_color)-> None:
+
     fig = go.Figure(go.Indicator(
         mode = "gauge+number+delta",
         value = confidence*100,
@@ -190,13 +233,21 @@ def new_gauge_plot(confidence, prediction, threshold, result_color)-> None:
                 'thickness': 1,
                 'value': (1-threshold)*100}},
         number = {'font': {'size': 70, 'color': result_color}, 'suffix': ' %', 'valueformat': '.2f'}))
-
-    # fig.update_layout(paper_bgcolor = "lavender", font = {'color': "darkblue", 'family': "Arial"})
+    
+    # Add legend for gauge steps and threshold
+    for name, color, symbol in zip([f"SAFE: result > {(1-threshold)*100:.2f}%", f"Threshold: {(1-threshold)*100:.2f}%", f"RISKY: {(1-threshold)*100 - 5:.2f}% > result > {(1-threshold)*100:.2f}%", f"NOPE: result < {(1-threshold)*100 - 5:.2f}%"], ["Darkturquoise", "Gold", "Coral", "Firebrick"], ["square", "line-ew", "square", "square"]):
+        fig.add_traces(go.Scatter(
+            x=[None],
+            y=[None],
+            mode="markers",
+            name=name,
+            marker=dict(size=20, color=color, symbol=symbol, line=dict(color="white" if symbol == "square" else color, width=2)),
+        ))
 
     st.plotly_chart(fig, use_container_width=True)
 
 # Function to display credit result
-def display_credit_result(prediction, confidence, risk_category, threshold=.162)-> None:
+def display_credit_result(confidence, risk_category, threshold)-> None:
 
     risk_categories = {
         'SAFE': 'Darkturquoise',
@@ -218,10 +269,10 @@ def display_credit_result(prediction, confidence, risk_category, threshold=.162)
     # Display confidence as a gauge
     st.markdown("### Credit risk profile:")
     # plot_gauge(confidence, prediction)
-    new_gauge_plot(confidence, prediction, threshold, result_color)
+    new_gauge_plot(confidence, threshold, result_color)
 
 # Function to predict credit risk
-def predict_credit_risk(client_id: int, threshold: float = .162, api_url="http://127.0.0.1:8000/predict_from_dict", debug: bool = False)-> None:
+def predict_credit_risk(client_id: int, threshold: float, api_url="http://127.0.0.1:8000/predict_from_dict", debug: bool = False)-> None:
     client_infos = get_client_infos(client_id=client_id, output='dict', debug=debug)
     json_payload_predict_from_dict = {
         'client_infos': client_infos,
@@ -239,13 +290,13 @@ def predict_credit_risk(client_id: int, threshold: float = .162, api_url="http:/
         risk_category = prediction_result['risk_category']
 
         # Display prediction result
-        display_credit_result(prediction, confidence, risk_category, threshold=threshold)
+        display_credit_result(confidence, risk_category, threshold)
 
 
 # TAB 2 FUNCTIONS (FEATURE IMPORTANCE)
 
 # Function to get feature importance from API
-def get_built_in_global_feature_importance(api_url="http://127.0.0.1:8000/global_feature_importance")-> dict | None:
+def get_built_in_global_feature_importance(api_url="http://127.0.0.1:8000/global_feature_importance")-> Union[dict,None]:
     # Replace this URL with your actual API endpoint
     api_url = api_url
     
@@ -280,7 +331,7 @@ def display_built_in_global_feature_importance(model_type, nb_features, importan
         x=importance_values,
         y=feature_names,
         orientation='h',
-        marker=dict(color='royalblue'),  # Change the color of bars if needed
+        marker=dict(color='Coral'),  # Change the color of bars if needed
     ))
 
     fig.update_traces(text=importance_values, textposition='outside')
@@ -343,7 +394,6 @@ def plot_shap(scale, features, shap_feature_importance_dict, nb_features: int=20
             feature_names=feature_names, #Use column names
             show=False, #Set to false to output to folder
             max_display=nb_features) # Set max features to display
-            # plot_size=(10,10)) # Change plot size
         )
     elif scale == 'Local':
         plt.clf()
@@ -389,43 +439,48 @@ def display_shap_feature_importance(client_id: Union[int, None], scale: Literal[
 
 # TAB 3 FUNCTIONS (CLIENT COMPARISON)
 
+def fetch_cat_and_split_features(global_features, db_uri: str=HEROKU_DATABASE_URI, debug: bool=False):
+    engine = create_engine(db_uri)
 
-def fetch_cat_and_split_features(global_features, debug: bool=False):
-    conn = sqlite3.connect('C:/Users/emile/DEV/WORKSPACE/projet-7-cours-oc/model/model/features/clients_infos.db')
     if debug:
-        features_query = "PRAGMA table_info(train_df_debug)"
-        features_df = pd.read_sql_query(features_query, conn)
-        cursor = conn.cursor()
+        table_name = 'train_df_debug'
     else:
-        features_query = "PRAGMA table_info(train_df)"
-        features_df = pd.read_sql_query(features_query, conn)
-        cursor = conn.cursor()
+        table_name = 'train_df'
+
+    features_query = text('SELECT column_name, data_type FROM information_schema.columns WHERE table_name = :table_name')# AND column_name NOT IN ("SK_ID_CURR", "index", "TARGET")')
+    features_df = pd.read_sql_query(features_query, engine, params={'table_name': table_name})
 
     def is_binary_column(column_name, debug: bool=False):
         if debug:
-            cursor.execute(f"SELECT COUNT(DISTINCT {column_name}) FROM train_df_debug")
-            num_distinct_values = cursor.fetchone()[0]
+            query = f'SELECT COUNT(DISTINCT "{column_name}") FROM {table_name}'
+            with engine.connect() as conn:
+                num_distinct_values = conn.execute(text(query)).fetchone()[0]
             return num_distinct_values == 2
         else:
-            cursor.execute(f"SELECT COUNT(DISTINCT {column_name}) FROM (SELECT {column_name} FROM train_df UNION ALL SELECT {column_name} FROM test_df) AS concatenated_tables")
-            num_distinct_values = cursor.fetchone()[0]
+            query = f'SELECT COUNT(DISTINCT "{column_name}") FROM (SELECT "{column_name}" FROM train_df UNION ALL SELECT "{column_name}" FROM test_df) AS concatenated_tables'
+            with engine.connect() as conn:
+                num_distinct_values = conn.execute(text(query)).fetchone()[0]
             return num_distinct_values == 2
-    
+
     def has_more_than_7_unique_values(column_name, debug: bool=False):
         if debug:
-            cursor.execute(f"SELECT COUNT(DISTINCT {column_name}) FROM train_df_debug")
-            num_distinct_values = cursor.fetchone()[0]
-            return num_distinct_values > 7
+            query = text('SELECT COUNT(DISTINCT ":column_name") FROM :table_name')
+            params = {'column_name': column_name, 'table_name': table_name}
         else:
-            cursor.execute(f"SELECT COUNT(DISTINCT {column_name}) FROM (SELECT {column_name} FROM train_df UNION ALL SELECT {column_name} FROM test_df) AS concatenated_tables")
-            num_distinct_values = cursor.fetchone()[0]
-            return num_distinct_values > 7
+            query = text('SELECT COUNT(DISTINCT ":column_name") FROM (SELECT ":column_name" FROM train_df UNION ALL SELECT ":column_name" FROM test_df) AS concatenated_tables')
+            params = {'column_name': column_name}
+
+        with engine.connect() as conn:
+            result = conn.execute(query, params)
+            num_distinct_values = result.fetchone()[0]
+
+        return num_distinct_values > 7
 
     # Filter out features with data type 'int' (assuming they are categorical)
-    categorical_features = features_df[features_df['type'] == 'INTEGER']['name'].tolist()
+    categorical_features = features_df[features_df['data_type'] == 'integer']['column_name'].tolist()
 
-    # Remove 'index' and 'SK_ID_CURR' from the list of categorical features
-    categorical_features = [feature for feature in categorical_features if feature not in ['index', 'SK_ID_CURR']]
+    # Remove SK_ID_CURR and index from the categorical features list
+    categorical_features = [feature for feature in categorical_features if feature not in ['SK_ID_CURR', 'index']]
 
     # Sort categorical features according to the order of global features and remove features with more than 7 unique values
     ordered_categorical_features = [feature for feature in global_features if (feature in categorical_features and not has_more_than_7_unique_values(feature, debug=debug))]
@@ -436,9 +491,67 @@ def fetch_cat_and_split_features(global_features, debug: bool=False):
     # remove features with more than two unique values
     split_features = [feature for feature in ordered_categorical_features if is_binary_column(feature, debug=debug)]
 
-    conn.close()
-
     return ordered_categorical_features, split_features
+# def fetch_cat_and_split_features(global_features, db_uri: str=HEROKU_DATABASE_URI, debug: bool=False):
+#     # conn = sqlite3.connect('C:/Users/emile/DEV/WORKSPACE/projet-7-cours-oc/model/model/features/clients_infos.db')
+#     engine = create_engine(db_uri)
+#     if debug:
+#         features_query = "PRAGMA table_info(train_df_debug)"
+#         features_df = pd.read_sql_query(features_query, engine)
+#         # cursor = conn.cursor()
+#         connection = engine.connect()
+#     else:
+#         features_query = "PRAGMA table_info(train_df)"
+#         features_df = pd.read_sql_query(features_query, engine)
+#         # cursor = conn.cursor()
+#         connection = engine.connect()
+
+#     def is_binary_column(column_name, debug: bool=False):
+#         if debug:
+#             # cursor.execute(f"SELECT COUNT(DISTINCT {column_name}) FROM train_df_debug")
+#             # num_distinct_values = cursor.fetchone()[0]
+#             query = text(f"SELECT COUNT(DISTINCT {column_name}) FROM train_df_debug")
+#             num_distinct_values = connection.execute(query).fetchone()[0]
+#             return num_distinct_values == 2
+#         else:
+#             # cursor.execute(f"SELECT COUNT(DISTINCT {column_name}) FROM (SELECT {column_name} FROM train_df UNION ALL SELECT {column_name} FROM test_df) AS concatenated_tables")
+#             # num_distinct_values = cursor.fetchone()[0]
+#             query = text(f"SELECT COUNT(DISTINCT {column_name}) FROM (SELECT {column_name} FROM train_df UNION ALL SELECT {column_name} FROM test_df) AS concatenated_tables")
+#             num_distinct_values = connection.execute(query).fetchone()[0]
+#             return num_distinct_values == 2
+    
+#     def has_more_than_7_unique_values(column_name, debug: bool=False):
+#         if debug:
+#             # cursor.execute(f"SELECT COUNT(DISTINCT {column_name}) FROM train_df_debug")
+#             # num_distinct_values = cursor.fetchone()[0]
+#             query = text(f"SELECT COUNT(DISTINCT {column_name}) FROM train_df_debug")
+#             num_distinct_values = connection.execute(query).fetchone()[0]
+#             return num_distinct_values > 7
+#         else:
+#             # cursor.execute(f"SELECT COUNT(DISTINCT {column_name}) FROM (SELECT {column_name} FROM train_df UNION ALL SELECT {column_name} FROM test_df) AS concatenated_tables")
+#             # num_distinct_values = cursor.fetchone()[0]
+#             query = text(f"SELECT COUNT(DISTINCT {column_name}) FROM (SELECT {column_name} FROM train_df UNION ALL SELECT {column_name} FROM test_df) AS concatenated_tables")
+#             num_distinct_values = connection.execute(query).fetchone()[0]
+#             return num_distinct_values > 7
+
+#     # Filter out features with data type 'int' (assuming they are categorical)
+#     categorical_features = features_df[features_df['type'] == 'INTEGER']['name'].tolist()
+
+#     # Remove 'index' and 'SK_ID_CURR' from the list of categorical features
+#     categorical_features = [feature for feature in categorical_features if feature not in ['index', 'SK_ID_CURR']]
+
+#     # Sort categorical features according to the order of global features and remove features with more than 7 unique values
+#     ordered_categorical_features = [feature for feature in global_features if (feature in categorical_features and not has_more_than_7_unique_values(feature, debug=debug))]
+
+#     # Insert 'TARGET' after an empty string at the beginning of the list
+#     ordered_categorical_features.insert(0, 'TARGET')
+
+#     # remove features with more than two unique values
+#     split_features = [feature for feature in ordered_categorical_features if is_binary_column(feature, debug=debug)]
+
+#     connection.close()
+
+#     return ordered_categorical_features, split_features
 
 def update_available_features():
     importance_type = st.session_state['tab_3_selected_importance_type']
@@ -451,7 +564,7 @@ def update_available_features():
         'split_features': split_features
     }
 
-def update_violinplot_data():#selected_global_feature: str, selected_categorical_feature: str, selected_split_feature: str, client_id: int, limit: int, debug: bool=False):
+def update_violinplot_data(db_uri=HEROKU_DATABASE_URI):#selected_global_feature: str, selected_categorical_feature: str, selected_split_feature: str, client_id: int, limit: int, debug: bool=False):
 
     selected_global_feature = st.session_state['client_comparison']['global']
     selected_categorical_feature = st.session_state['client_comparison']['categorical']
@@ -461,7 +574,8 @@ def update_violinplot_data():#selected_global_feature: str, selected_categorical
     debug = st.session_state['debug_mode']
 
     # Retrieve data
-    conn = sqlite3.connect('C:/Users/emile/DEV/WORKSPACE/projet-7-cours-oc/model/model/features/clients_infos.db')
+    # conn = sqlite3.connect('C:/Users/emile/DEV/WORKSPACE/projet-7-cours-oc/model/model/features/clients_infos.db')
+    engine = create_engine(db_uri)
 
     pass_query = False
     query = ""
@@ -480,13 +594,13 @@ def update_violinplot_data():#selected_global_feature: str, selected_categorical
             query_client = f"SELECT SK_ID_CURR, {selected_features_str} FROM train_df WHERE SK_ID_CURR = {client_id} UNION ALL SELECT SK_ID_CURR, {selected_features_str} FROM test_df WHERE SK_ID_CURR = {client_id}"
 
     # Execute the query and read the result into a DataFrame
-    df = pd.DataFrame() if pass_query else pd.read_sql_query(query, conn)
-    row_client = pd.DataFrame() if pass_query else pd.read_sql_query(query_client, conn)
+    df = pd.DataFrame() if pass_query else pd.read_sql_query(query, engine)
+    row_client = pd.DataFrame() if pass_query else pd.read_sql_query(query_client, engine)
 
-    concatenated_df = pd.concat([df, row_client])
+    concatenated_df = pd.concat([row_client, df], ignore_index=True)
 
     # Close the connection
-    conn.close()
+    # conn.close()
 
     st.session_state['client_comparison']['data'] = concatenated_df
 
