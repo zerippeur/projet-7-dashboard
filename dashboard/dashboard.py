@@ -4,7 +4,7 @@ from dashboard_functions import toggle_debug_mode, get_model_threshold
 from dashboard_functions import submit_client_id, predict_credit_risk
 from dashboard_functions import display_built_in_global_feature_importance, get_built_in_global_feature_importance
 from dashboard_functions import initiate_shap_explainer, display_shap_feature_importance
-from dashboard_functions import update_available_features, update_violinplot_data, display_violinplot
+from dashboard_functions import update_available_features, update_violinplot_data, display_violinplot, fetch_cat_and_split_features
 
 # streamlit run dashboard.py
 st.set_page_config(layout="wide")
@@ -19,6 +19,16 @@ if 'client_id' not in st.session_state:
 
 if 'feature_importance' not in st.session_state:
     st.session_state['feature_importance'] = get_built_in_global_feature_importance()
+
+if 'available_features' not in st.session_state:
+    imp_dict = st.session_state['feature_importance']['feature_importance']
+    first_key = next(iter(imp_dict), None)
+    st.session_state['available_features'] = {
+        'initiated': False,
+        'global_features': [key for key, _ in sorted(st.session_state['feature_importance']['feature_importance'][first_key].items(), key=lambda item: item[1], reverse=True)],
+        'categorical_features': None,
+        'split_features': None
+    }
 
 if 'threshold' not in st.session_state:
     st.session_state['threshold'] = get_model_threshold()
@@ -69,16 +79,17 @@ submit_id = st.sidebar.button('Submit client ID', on_click=submit_client_id(clie
 
 shap_initiation = st.sidebar.button('Initiate Shap explainer', key='initiate_shap_explainer', on_click=initiate_shap_explainer, disabled=st.session_state['shap']['initiated'] == True)
 
+available_feature_initiation = st.sidebar.button('Initiate available features', key='update_available_features', on_click=fetch_cat_and_split_features, disabled=st.session_state['available_features']['initiated'] == True)
+
 tab1, tab2, tab3, tab4 = st.tabs([':clipboard: Credit risk prediction', ':bar_chart: Feature importance', ':chart_with_upwards_trend: Client comparison', ':wrench: debug'])
 
 with tab1:
     st.write('Current client ID:', st.session_state['client_id'])
     st.header('Credit risk prediction', divider='red')
-
     if st.session_state['client_id'] is not None:
         predict = st.button('Predict credit risk', key='predict')
         if predict:
-            predict_credit_risk(client_id=st.session_state['client_id'], threshold=st.session_state['threshold'], debug=st.session_state['debug_mode'])      
+            predict_credit_risk(client_id=st.session_state['client_id'], threshold=st.session_state['threshold'], debug=st.session_state['debug_mode'])
     else:
         st.warning('Please enter a client ID in the sidebar section.')
 
@@ -137,7 +148,9 @@ with tab3:
 
     if st.session_state['client_id'] is None:
         st.warning('Please enter a client ID in the sidebar section.')
-    else:
+    if st.session_state['available_features']['initiated'] == False:
+        st.warning('Please initiate available features in the sidebar section.')
+    if st.session_state['client_id'] is not None and st.session_state['available_features']['initiated'] == True:
         with st.container(border=True):
             st.session_state['tab_3_selected_importance_type'] = st.radio("Order available feature by feature importance type:", available_importance_types, index=0, horizontal=True, on_change=update_available_features)
         
@@ -161,7 +174,7 @@ with tab3:
             st.session_state['client_comparison']['categorical'] = None
             st.session_state['client_comparison']['split'] = None
         else:
-            st.session_state['client_comparison']['categorical'] = col2.selectbox('CATEGORICAL FEATURE', [None] + st.session_state['available_features']['categorical_features'], index=0, on_change=update_available_features)
+            st.session_state['client_comparison']['categorical'] = col2.selectbox('CATEGORICAL FEATURE', [None] + [categorical_feature for categorical_feature in st.session_state['available_features']['categorical_features'] if categorical_feature != st.session_state['client_comparison']['global']], index=0, on_change=update_available_features)
             if st.session_state['client_comparison']['categorical'] is None:
                 st.session_state['client_comparison']['split'] = None
             else:

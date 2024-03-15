@@ -14,7 +14,9 @@ import seaborn as sns
 import plotly.graph_objects as go
 from dotenv import load_dotenv
 import os
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, text, distinct, inspect, Table, MetaData, select, and_, or_, func, column
+# from sqlalchemy.sql import func
+from sqlalchemy.orm import sessionmaker
 
 # ENVIRONEMENT VARIABLES
 load_dotenv('dashboard.env')
@@ -233,16 +235,28 @@ def new_gauge_plot(confidence, threshold, result_color)-> None:
                 'thickness': 1,
                 'value': (1-threshold)*100}},
         number = {'font': {'size': 70, 'color': result_color}, 'suffix': ' %', 'valueformat': '.2f'}))
-    
+
     # Add legend for gauge steps and threshold
-    for name, color, symbol in zip([f"SAFE: result > {(1-threshold)*100:.2f}%", f"Threshold: {(1-threshold)*100:.2f}%", f"RISKY: {(1-threshold)*100 - 5:.2f}% > result > {(1-threshold)*100:.2f}%", f"NOPE: result < {(1-threshold)*100 - 5:.2f}%"], ["Darkturquoise", "Gold", "Coral", "Firebrick"], ["square", "line-ew", "square", "square"]):
+    for name, color, symbol in zip([f"SAFE: {(1-threshold)*100:.2f}% to 100%", f"Threshold: {(1-threshold)*100:.2f}%", f"RISKY: {(1-threshold)*100 - 5:.2f}% to {(1-threshold)*100:.2f}%", f"NOPE: 0% to {(1-threshold)*100 - 5:.2f}%"], ["Darkturquoise", "Gold", "Coral", "Firebrick"], ["square", "line-ew", "square", "square"]):
         fig.add_traces(go.Scatter(
             x=[None],
             y=[None],
             mode="markers",
             name=name,
-            marker=dict(size=20, color=color, symbol=symbol, line=dict(color="white" if symbol == "square" else color, width=2)),
+            marker=dict(size=30, color=color, symbol=symbol, line=dict(color="white" if symbol == "square" else color, width=2)),
         ))
+        fig.update_traces(
+            marker_size=30,
+            selector=dict(type='scatter')
+        )
+
+    # Remove axes
+    fig.update_layout(
+        xaxis_visible=False,
+        yaxis_visible=False,
+        # legend_itemsizing='constant',
+        # legend_itemwidth=30
+    )
 
     st.plotly_chart(fig, use_container_width=True)
 
@@ -439,126 +453,101 @@ def display_shap_feature_importance(client_id: Union[int, None], scale: Literal[
 
 # TAB 3 FUNCTIONS (CLIENT COMPARISON)
 
-def fetch_cat_and_split_features(global_features, db_uri: str=HEROKU_DATABASE_URI, debug: bool=False):
+def fetch_cat_and_split_features(db_uri=HEROKU_DATABASE_URI, limit=7):
+    global_features = st.session_state['available_features']['global_features']
+    debug = st.session_state['debug_mode']
     engine = create_engine(db_uri)
+    # connection = engine.connect()
 
+    # # Query the first table
+    # if debug:
+    #     table1 = 'train_df_debug'
+    #     query = text(f'SELECT column_name FROM INFORMATION_SCHEMA.COLUMNS WHERE table_name = "{table1}" AND column_name != "SK_ID_CURR"')
+    #     cols = pd.read_sql(query, connection)
+    # else:
+    #     table1 = 'train_df'
+    #     query = text(f'SELECT column_name FROM INFORMATION_SCHEMA.COLUMNS WHERE table_name = "{table1}" AND column_name != "SK_ID_CURR"')
+    #     cols1 = pd.read_sql(query, connection)
+    #     table2 = 'test_df'
+    #     query = text(f'SELECT column_name FROM INFORMATION_SCHEMA.COLUMNS WHERE table_name = "{table2}" AND column_name != "SK_ID_CURR"')
+    #     cols2 = pd.read_sql(query, connection)
+    #     cols = pd.concat([cols1, cols2], axis=0)
+
+    # # Find categorical columns with no more than 'limit' unique values and binary features
+    # categorical_cols = []
+    # binary_cols = []
+    # for col in cols['column_name']:
+    #     if debug:
+    #         query = f'SELECT COUNT(DISTINCT "{col}") FROM {table1}'
+    #     else:
+    #         query = f'SELECT COUNT(DISTINCT "{col}") FROM ((SELECT "{col}" FROM {table1}) UNION ALL (SELECT "{col}" FROM {table2})) AS t'
+    #     unique_values = pd.read_sql(query, connection).iloc[0][0]
+    #     if unique_values <= limit:
+    #         categorical_cols.append(col)
+    #     if unique_values == 2:
+    #         binary_cols.append(col)
+
+    # # Order both lists using order from global_features
+    # categorical_cols = [col for col in global_features if col in categorical_cols]
+    # binary_cols = [col for col in global_features if col in binary_cols]
+
+    # # Add 'TARGET' at the beginning of both lists
+    # categorical_cols.insert(0, 'TARGET')
+    # binary_cols.insert(0, 'TARGET')
+
+    # connection.close()
+    # return categorical_cols, binary_cols
+    connection = engine.connect()
+
+    # Query the first table
     if debug:
-        table_name = 'train_df_debug'
+        table1 = 'train_df_debug'
+        query = f"SELECT * FROM {table1}"
+        df = pd.read_sql(query, connection)
     else:
-        table_name = 'train_df'
+        table1 = 'train_df'
+        query = f"SELECT * FROM {table1}"
+        df1 = pd.read_sql(query, connection)
+        table2 = 'test_df'
+        query = f"SELECT * FROM {table2}"
+        df2 = pd.read_sql(query, connection)
+        df = pd.concat([df1, df2], axis=1)
 
-    features_query = text('SELECT column_name, data_type FROM information_schema.columns WHERE table_name = :table_name')# AND column_name NOT IN ("SK_ID_CURR", "index", "TARGET")')
-    features_df = pd.read_sql_query(features_query, engine, params={'table_name': table_name})
+    # Find categorical columns with no more than 'limit' unique values and binary features
+    categorical_cols = []
+    binary_cols = []
+    for col in df.columns:
+        if col != 'SK_ID_CURR':
+            unique_values = df[col].nunique()
+            st.write(col, unique_values)
+            if unique_values <= limit:
+                categorical_cols.append(col)
+            if unique_values == 2:
+                binary_cols.append(col)
 
-    def is_binary_column(column_name, debug: bool=False):
-        if debug:
-            query = f'SELECT COUNT(DISTINCT "{column_name}") FROM {table_name}'
-            with engine.connect() as conn:
-                num_distinct_values = conn.execute(text(query)).fetchone()[0]
-            return num_distinct_values == 2
-        else:
-            query = f'SELECT COUNT(DISTINCT "{column_name}") FROM (SELECT "{column_name}" FROM train_df UNION ALL SELECT "{column_name}" FROM test_df) AS concatenated_tables'
-            with engine.connect() as conn:
-                num_distinct_values = conn.execute(text(query)).fetchone()[0]
-            return num_distinct_values == 2
+    # Order both lists using order from global_features
+    categorical_cols = [col for col in global_features if col in categorical_cols]
+    binary_cols = [col for col in global_features if col in binary_cols]
 
-    def has_more_than_7_unique_values(column_name, debug: bool=False):
-        if debug:
-            query = text('SELECT COUNT(DISTINCT ":column_name") FROM :table_name')
-            params = {'column_name': column_name, 'table_name': table_name}
-        else:
-            query = text('SELECT COUNT(DISTINCT ":column_name") FROM (SELECT ":column_name" FROM train_df UNION ALL SELECT ":column_name" FROM test_df) AS concatenated_tables')
-            params = {'column_name': column_name}
+    # Add 'TARGET' at the beginning of both lists
+    categorical_cols.insert(0, 'TARGET')
+    binary_cols.insert(0, 'TARGET')
 
-        with engine.connect() as conn:
-            result = conn.execute(query, params)
-            num_distinct_values = result.fetchone()[0]
-
-        return num_distinct_values > 7
-
-    # Filter out features with data type 'int' (assuming they are categorical)
-    categorical_features = features_df[features_df['data_type'] == 'integer']['column_name'].tolist()
-
-    # Remove SK_ID_CURR and index from the categorical features list
-    categorical_features = [feature for feature in categorical_features if feature not in ['SK_ID_CURR', 'index']]
-
-    # Sort categorical features according to the order of global features and remove features with more than 7 unique values
-    ordered_categorical_features = [feature for feature in global_features if (feature in categorical_features and not has_more_than_7_unique_values(feature, debug=debug))]
-
-    # Insert 'TARGET' after an empty string at the beginning of the list
-    ordered_categorical_features.insert(0, 'TARGET')
-
-    # remove features with more than two unique values
-    split_features = [feature for feature in ordered_categorical_features if is_binary_column(feature, debug=debug)]
-
-    return ordered_categorical_features, split_features
-# def fetch_cat_and_split_features(global_features, db_uri: str=HEROKU_DATABASE_URI, debug: bool=False):
-#     # conn = sqlite3.connect('C:/Users/emile/DEV/WORKSPACE/projet-7-cours-oc/model/model/features/clients_infos.db')
-#     engine = create_engine(db_uri)
-#     if debug:
-#         features_query = "PRAGMA table_info(train_df_debug)"
-#         features_df = pd.read_sql_query(features_query, engine)
-#         # cursor = conn.cursor()
-#         connection = engine.connect()
-#     else:
-#         features_query = "PRAGMA table_info(train_df)"
-#         features_df = pd.read_sql_query(features_query, engine)
-#         # cursor = conn.cursor()
-#         connection = engine.connect()
-
-#     def is_binary_column(column_name, debug: bool=False):
-#         if debug:
-#             # cursor.execute(f"SELECT COUNT(DISTINCT {column_name}) FROM train_df_debug")
-#             # num_distinct_values = cursor.fetchone()[0]
-#             query = text(f"SELECT COUNT(DISTINCT {column_name}) FROM train_df_debug")
-#             num_distinct_values = connection.execute(query).fetchone()[0]
-#             return num_distinct_values == 2
-#         else:
-#             # cursor.execute(f"SELECT COUNT(DISTINCT {column_name}) FROM (SELECT {column_name} FROM train_df UNION ALL SELECT {column_name} FROM test_df) AS concatenated_tables")
-#             # num_distinct_values = cursor.fetchone()[0]
-#             query = text(f"SELECT COUNT(DISTINCT {column_name}) FROM (SELECT {column_name} FROM train_df UNION ALL SELECT {column_name} FROM test_df) AS concatenated_tables")
-#             num_distinct_values = connection.execute(query).fetchone()[0]
-#             return num_distinct_values == 2
-    
-#     def has_more_than_7_unique_values(column_name, debug: bool=False):
-#         if debug:
-#             # cursor.execute(f"SELECT COUNT(DISTINCT {column_name}) FROM train_df_debug")
-#             # num_distinct_values = cursor.fetchone()[0]
-#             query = text(f"SELECT COUNT(DISTINCT {column_name}) FROM train_df_debug")
-#             num_distinct_values = connection.execute(query).fetchone()[0]
-#             return num_distinct_values > 7
-#         else:
-#             # cursor.execute(f"SELECT COUNT(DISTINCT {column_name}) FROM (SELECT {column_name} FROM train_df UNION ALL SELECT {column_name} FROM test_df) AS concatenated_tables")
-#             # num_distinct_values = cursor.fetchone()[0]
-#             query = text(f"SELECT COUNT(DISTINCT {column_name}) FROM (SELECT {column_name} FROM train_df UNION ALL SELECT {column_name} FROM test_df) AS concatenated_tables")
-#             num_distinct_values = connection.execute(query).fetchone()[0]
-#             return num_distinct_values > 7
-
-#     # Filter out features with data type 'int' (assuming they are categorical)
-#     categorical_features = features_df[features_df['type'] == 'INTEGER']['name'].tolist()
-
-#     # Remove 'index' and 'SK_ID_CURR' from the list of categorical features
-#     categorical_features = [feature for feature in categorical_features if feature not in ['index', 'SK_ID_CURR']]
-
-#     # Sort categorical features according to the order of global features and remove features with more than 7 unique values
-#     ordered_categorical_features = [feature for feature in global_features if (feature in categorical_features and not has_more_than_7_unique_values(feature, debug=debug))]
-
-#     # Insert 'TARGET' after an empty string at the beginning of the list
-#     ordered_categorical_features.insert(0, 'TARGET')
-
-#     # remove features with more than two unique values
-#     split_features = [feature for feature in ordered_categorical_features if is_binary_column(feature, debug=debug)]
-
-#     connection.close()
-
-#     return ordered_categorical_features, split_features
+    connection.close()
+    st.session_state['available_features']['categorical_features'] = categorical_cols
+    st.session_state['available_features']['split_features'] = binary_cols
+    st.session_state['available_features']['initiated'] = True
 
 def update_available_features():
     importance_type = st.session_state['tab_3_selected_importance_type']
     global_features = [key for key, _ in sorted(st.session_state['feature_importance']['feature_importance'][importance_type].items(), key=lambda item: item[1], reverse=True)]
-    categorical_features, split_features = fetch_cat_and_split_features(global_features, debug=st.session_state['debug_mode'])
+    categorical_features = [feature for feature in global_features if feature in st.session_state['available_features']['categorical_features']]
+    split_features = [feature for feature in global_features if feature in st.session_state['available_features']['split_features']]
+    categorical_features.insert(0, 'TARGET')
+    split_features.insert(0, 'TARGET')
 
     st.session_state['available_features'] = {
+        'initiated': True,
         'global_features': global_features,
         'categorical_features': categorical_features,
         'split_features': split_features
@@ -584,14 +573,14 @@ def update_violinplot_data(db_uri=HEROKU_DATABASE_URI):#selected_global_feature:
         pass_query = True
     else:
         selected_features = [feat for feat in [selected_global_feature, selected_categorical_feature, selected_split_feature] if feat is not None]
-        selected_features_str = ", ".join(selected_features)
+        selected_features_str = '", "'.join(selected_features)
 
         if debug:
-            query = f"SELECT SK_ID_CURR, {selected_features_str} FROM train_df_debug WHERE SK_ID_CURR != {client_id} ORDER BY RANDOM() LIMIT {limit}"
-            query_client = f"SELECT SK_ID_CURR, {selected_features_str} FROM train_df_debug WHERE SK_ID_CURR = {client_id}"
+            query = text(f'SELECT "SK_ID_CURR", "{selected_features_str}" FROM train_df_debug WHERE "SK_ID_CURR" != {client_id} ORDER BY RANDOM() LIMIT {limit}')
+            query_client = text(f'SELECT "SK_ID_CURR", "{selected_features_str}" FROM train_df_debug WHERE "SK_ID_CURR" = {client_id}')
         else:
-            query = f"SELECT SK_ID_CURR, {selected_features_str} FROM train_df WHERE SK_ID_CURR != {client_id} ORDER BY RANDOM() LIMIT {limit} UNION ALL SELECT SK_ID_CURR, {selected_features_str} FROM test_df WHERE SK_ID_CURR != {client_id} ORDER BY RANDOM() LIMIT {limit}"
-            query_client = f"SELECT SK_ID_CURR, {selected_features_str} FROM train_df WHERE SK_ID_CURR = {client_id} UNION ALL SELECT SK_ID_CURR, {selected_features_str} FROM test_df WHERE SK_ID_CURR = {client_id}"
+            query = text(f'SELECT "SK_ID_CURR", "{selected_features_str}" FROM train_df WHERE "SK_ID_CURR" != {client_id} ORDER BY RANDOM() LIMIT {limit} UNION ALL SELECT "SK_ID_CURR", "{selected_features_str}" FROM test_df WHERE "SK_ID_CURR" != {client_id} ORDER BY RANDOM() LIMIT {limit}')
+            query_client = text(f'SELECT "SK_ID_CURR", "{selected_features_str}" FROM train_df WHERE "SK_ID_CURR" = {client_id} UNION ALL SELECT "SK_ID_CURR", "{selected_features_str}" FROM test_df WHERE "SK_ID_CURR" = {client_id}')
 
     # Execute the query and read the result into a DataFrame
     df = pd.DataFrame() if pass_query else pd.read_sql_query(query, engine)
