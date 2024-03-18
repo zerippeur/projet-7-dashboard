@@ -56,27 +56,6 @@ def get_client_infos(client_id: int, output: Literal['dict', 'df'] = 'df', debug
     elif output == 'df':
         client_infos = result.drop(columns=['level_0', 'index', 'TARGET'])
         return client_infos
-# def get_client_infos(client_id: int, output: Literal['dict', 'df'] = 'df', debug: bool = False, db_uri: str=HEROKU_DATABASE_URI)-> Union[dict, pd.DataFrame]:
-#     # conn = sqlite3.connect(
-#     #     'C:/Users/emile/DEV/WORKSPACE/projet-7-cours-oc/model/model/features/clients_infos.db'
-#     # )
-#     engine = create_engine(db_uri)
-#     if debug:
-#         query = f'SELECT * FROM train_df_debug WHERE SK_ID_CURR = ? ORDER BY "index"'
-#         result = pd.read_sql_query(query, engine, params=(client_id), index_col='SK_ID_CURR')
-#         # conn.close()
-#     else:
-#         query = f'SELECT * FROM train_df WHERE SK_ID_CURR = ? UNION ALL SELECT * FROM test_df WHERE SK_ID_CURR = ? ORDER BY "index"'
-#         result = pd.read_sql_query(query, engine, params=(client_id, client_id), index_col='SK_ID_CURR')
-#         # conn.close()
-
-#     if output == 'dict':
-#         model_dict = result.drop(columns=['index', 'TARGET']).to_dict(orient='index')
-#         client_infos = model_dict[client_id]
-#         return client_infos
-#     elif output == 'df':
-#         client_infos = result.drop(columns=['index', 'TARGET'])
-#         return client_infos
 
 # Function to generate accessible palettes based on the number of groups to colorize
 def generate_full_palette(num_groups):
@@ -163,16 +142,13 @@ def balance_classes(X: pd.DataFrame, y: pd.Series, method: Literal['smote', 'ran
     return X_resampled, y_resampled
 
 def get_data_for_shap_initiation(debug: bool=False, db_uri=HEROKU_DATABASE_URI)-> pd.DataFrame:
-    # conn = sqlite3.connect(
-    #     'C:/Users/emile/DEV/WORKSPACE/projet-7-cours-oc/model/model/features/clients_infos.db'
-    # )
     engine = create_engine(db_uri)
     if debug:
-        query = text(f'SELECT * FROM train_df_debug')
+        query = text(f'SELECT * FROM train_df_debug ORDER BY RANDOM() LIMIT 3000')
         result = pd.read_sql_query(query, engine, index_col='SK_ID_CURR')
         # conn.close()
     else:
-        query = text(f'SELECT * FROM train_df UNION ALL SELECT * FROM test_df')
+        query = text(f'SELECT * FROM train_df UNION ALL SELECT * FROM test_df LIMIT 6000')
         result = pd.read_sql_query(query, engine, index_col='SK_ID_CURR')
         # conn.close()
 
@@ -186,11 +162,21 @@ def get_data_for_shap_initiation(debug: bool=False, db_uri=HEROKU_DATABASE_URI)-
 def initiate_shap_explainer(api_url="http://127.0.0.1:8000/initiate_shap_explainer")-> None:
     debug = st.session_state['debug_mode']
     data_for_shap_initiation = get_data_for_shap_initiation(debug=debug)
-    response = requests.post(api_url)
+    json_payload = data_for_shap_initiation.to_dict(orient='index')
+    response = requests.post(api_url, json=json_payload)
     if response.status_code == 200:
+        result = response.json()
+        shap_values = result['shap_values']
+        feature_names = result['feature_names']
+        expected_value = result['expected_value']
         st.success("Shap explainer initiated successfully")
         st.session_state['shap']['initiated'] = True
+        st.session_state['shap']['Global']['loaded'] = True
         st.session_state['shap']['Global']['features'] = data_for_shap_initiation
+        st.session_state['shap']['Global']['shap_values'] = shap_values
+        st.session_state['shap']['Global']['feature_names'] = feature_names
+        st.session_state['shap']['Global']['expected_value'] = expected_value
+
     else:
         st.error("Error initiating shap explainer")
 
@@ -363,10 +349,13 @@ def display_built_in_global_feature_importance(model_type, nb_features, importan
 # Function to get shap feature importance from API
 def get_shap_feature_importance(client_id: Union[int, None], scale: Literal['Global', 'Local'], api_url: str="http://127.0.0.1:8000/shap_feature_importance", debug: bool = False)-> Union[dict, None]:
     if scale == 'Global':
-        json_payload_shap_feature_importance = {
-            'client_infos': None,
-            'feature_scale': scale
-        }
+        result = {
+        'shap_values': st.session_state['shap']['Global']['shap_values'],
+        'feature_names': st.session_state['shap']['Global']['feature_names'],
+        'expected_value': None
+    }
+        return result
+    
     elif scale == 'Local' and client_id is not None:    
         client_infos = get_client_infos(client_id=client_id, output='dict', debug=debug)
         json_payload_shap_feature_importance = {
@@ -374,15 +363,18 @@ def get_shap_feature_importance(client_id: Union[int, None], scale: Literal['Glo
             'feature_scale': scale
         }
 
-    response = requests.post(
-        api_url, json=json_payload_shap_feature_importance
-    )
+        response = requests.post(
+            api_url, json=json_payload_shap_feature_importance
+        )
 
-    if response.status_code == 200:
-        result = response.json()
-        return result
+        if response.status_code == 200:
+            result = response.json()
+            return result
+        else:
+            st.error("Error fetching feature importance from API")
+            return None
     else:
-        st.error("Error fetching feature importance from API")
+        st.error("Error: Unsupported scale")
         return None
 
 # Function to update shap session state
@@ -422,19 +414,19 @@ def plot_shap(scale, features, shap_feature_importance_dict, nb_features: int=20
 # Function to display shap feature importance
 def display_shap_feature_importance(client_id: Union[int, None], scale: Literal['Global', 'Local'], nb_features: int=20, debug: bool = False)-> None:
     if scale == 'Global':
-        if not st.session_state['shap'][scale]['loaded']:
-            shap_feature_importance_dict = get_shap_feature_importance(client_id=client_id, scale=scale, api_url="http://127.0.0.1:8000/shap_feature_importance", debug=debug)
-            features = st.session_state['shap'][scale]['features']
-            plot_shap(scale=scale, features=features, shap_feature_importance_dict=shap_feature_importance_dict, nb_features=nb_features)
-            update_shap_session_state(scale=scale, features=features, shap_feature_importance_dict=shap_feature_importance_dict, client_id=client_id)
-        else:
-            shap_feature_importance_dict = {
-                'features': st.session_state['shap'][scale]['features'],
-                'shap_values': st.session_state['shap'][scale]['shap_values'],
-                'feature_names': st.session_state['shap'][scale]['feature_names'],
-                'expected_value': st.session_state['shap'][scale]['expected_value']
-            }
-            plot_shap(scale=scale, features=st.session_state['shap'][scale]['features'], shap_feature_importance_dict=shap_feature_importance_dict, nb_features=nb_features)
+        # if not st.session_state['shap'][scale]['loaded']:
+        #     shap_feature_importance_dict = get_shap_feature_importance(client_id=client_id, scale=scale, api_url="http://127.0.0.1:8000/shap_feature_importance", debug=debug)
+        #     features = st.session_state['shap'][scale]['features']
+        #     plot_shap(scale=scale, features=features, shap_feature_importance_dict=shap_feature_importance_dict, nb_features=nb_features)
+        #     update_shap_session_state(scale=scale, features=features, shap_feature_importance_dict=shap_feature_importance_dict, client_id=client_id)
+        # else:
+        shap_feature_importance_dict = {
+            'features': st.session_state['shap'][scale]['features'],
+            'shap_values': st.session_state['shap'][scale]['shap_values'],
+            'feature_names': st.session_state['shap'][scale]['feature_names'],
+            'expected_value': st.session_state['shap'][scale]['expected_value']
+        }
+        plot_shap(scale=scale, features=st.session_state['shap'][scale]['features'], shap_feature_importance_dict=shap_feature_importance_dict, nb_features=nb_features)
     elif scale == 'Local':
         if not st.session_state['shap'][scale]['loaded'] or client_id is not st.session_state['shap'][scale]['client_id']:
             shap_feature_importance_dict = get_shap_feature_importance(client_id=client_id, scale=scale, api_url="http://127.0.0.1:8000/shap_feature_importance", debug=debug)
@@ -457,61 +449,25 @@ def fetch_cat_and_split_features(db_uri=HEROKU_DATABASE_URI, limit=7):
     global_features = st.session_state['available_features']['global_features']
     debug = st.session_state['debug_mode']
     engine = create_engine(db_uri)
-    # connection = engine.connect()
 
-    # # Query the first table
-    # if debug:
-    #     table1 = 'train_df_debug'
-    #     query = text(f'SELECT column_name FROM INFORMATION_SCHEMA.COLUMNS WHERE table_name = "{table1}" AND column_name != "SK_ID_CURR"')
-    #     cols = pd.read_sql(query, connection)
-    # else:
-    #     table1 = 'train_df'
-    #     query = text(f'SELECT column_name FROM INFORMATION_SCHEMA.COLUMNS WHERE table_name = "{table1}" AND column_name != "SK_ID_CURR"')
-    #     cols1 = pd.read_sql(query, connection)
-    #     table2 = 'test_df'
-    #     query = text(f'SELECT column_name FROM INFORMATION_SCHEMA.COLUMNS WHERE table_name = "{table2}" AND column_name != "SK_ID_CURR"')
-    #     cols2 = pd.read_sql(query, connection)
-    #     cols = pd.concat([cols1, cols2], axis=0)
-
-    # # Find categorical columns with no more than 'limit' unique values and binary features
-    # categorical_cols = []
-    # binary_cols = []
-    # for col in cols['column_name']:
-    #     if debug:
-    #         query = f'SELECT COUNT(DISTINCT "{col}") FROM {table1}'
-    #     else:
-    #         query = f'SELECT COUNT(DISTINCT "{col}") FROM ((SELECT "{col}" FROM {table1}) UNION ALL (SELECT "{col}" FROM {table2})) AS t'
-    #     unique_values = pd.read_sql(query, connection).iloc[0][0]
-    #     if unique_values <= limit:
-    #         categorical_cols.append(col)
-    #     if unique_values == 2:
-    #         binary_cols.append(col)
-
-    # # Order both lists using order from global_features
-    # categorical_cols = [col for col in global_features if col in categorical_cols]
-    # binary_cols = [col for col in global_features if col in binary_cols]
-
-    # # Add 'TARGET' at the beginning of both lists
-    # categorical_cols.insert(0, 'TARGET')
-    # binary_cols.insert(0, 'TARGET')
-
-    # connection.close()
     # return categorical_cols, binary_cols
     connection = engine.connect()
 
     # Query the first table
     if debug:
         table1 = 'train_df_debug'
-        query = f"SELECT * FROM {table1}"
+        query = f"SELECT * FROM {table1} ORDER BY RANDOM() LIMIT {3000}"
         df = pd.read_sql(query, connection)
+        df.drop(columns=['level_0'], inplace=True)
     else:
         table1 = 'train_df'
-        query = f"SELECT * FROM {table1}"
+        query = f"SELECT * FROM {table1} ORDER BY RANDOM() LIMIT {3000}"
         df1 = pd.read_sql(query, connection)
         table2 = 'test_df'
-        query = f"SELECT * FROM {table2}"
+        query = f"SELECT * FROM {table2} ORDER BY RANDOM() LIMIT {3000}"
         df2 = pd.read_sql(query, connection)
-        df = pd.concat([df1, df2], axis=1)
+        df = pd.concat([df1, df2], axis=0)
+        df.drop(columns=['level_0'], inplace=True)
 
     # Find categorical columns with no more than 'limit' unique values and binary features
     categorical_cols = []
@@ -519,7 +475,6 @@ def fetch_cat_and_split_features(db_uri=HEROKU_DATABASE_URI, limit=7):
     for col in df.columns:
         if col != 'SK_ID_CURR':
             unique_values = df[col].nunique()
-            st.write(col, unique_values)
             if unique_values <= limit:
                 categorical_cols.append(col)
             if unique_values == 2:
@@ -576,15 +531,53 @@ def update_violinplot_data(db_uri=HEROKU_DATABASE_URI):#selected_global_feature:
         selected_features_str = '", "'.join(selected_features)
 
         if debug:
-            query = text(f'SELECT "SK_ID_CURR", "{selected_features_str}" FROM train_df_debug WHERE "SK_ID_CURR" != {client_id} ORDER BY RANDOM() LIMIT {limit}')
+            query = text(f'''
+                WITH random_train AS (
+                    SELECT "SK_ID_CURR", "{selected_features_str}"
+                    FROM train_df_debug
+                    WHERE "SK_ID_CURR" != {client_id}
+                    ORDER BY RANDOM()
+                    LIMIT {limit}
+                )
+                SELECT * FROM random_train
+            ''')
             query_client = text(f'SELECT "SK_ID_CURR", "{selected_features_str}" FROM train_df_debug WHERE "SK_ID_CURR" = {client_id}')
         else:
-            query = text(f'SELECT "SK_ID_CURR", "{selected_features_str}" FROM train_df WHERE "SK_ID_CURR" != {client_id} ORDER BY RANDOM() LIMIT {limit} UNION ALL SELECT "SK_ID_CURR", "{selected_features_str}" FROM test_df WHERE "SK_ID_CURR" != {client_id} ORDER BY RANDOM() LIMIT {limit}')
+            query = text(f'''
+                WITH random_train AS (
+                    SELECT "SK_ID_CURR", "{selected_features_str}"
+                    FROM train_df
+                    WHERE "SK_ID_CURR" != {client_id}
+                    ORDER BY RANDOM()
+                    LIMIT {limit}
+                ),
+                random_test AS (
+                    SELECT "SK_ID_CURR", "{selected_features_str}"
+                    FROM test_df
+                    WHERE "SK_ID_CURR" != {client_id}
+                    ORDER BY RANDOM()
+                    LIMIT {limit}
+                )
+                SELECT * FROM random_train
+                UNION ALL
+                SELECT * FROM random_test
+            ''')
             query_client = text(f'SELECT "SK_ID_CURR", "{selected_features_str}" FROM train_df WHERE "SK_ID_CURR" = {client_id} UNION ALL SELECT "SK_ID_CURR", "{selected_features_str}" FROM test_df WHERE "SK_ID_CURR" = {client_id}')
 
     # Execute the query and read the result into a DataFrame
     df = pd.DataFrame() if pass_query else pd.read_sql_query(query, engine)
     row_client = pd.DataFrame() if pass_query else pd.read_sql_query(query_client, engine)
+
+    #     if debug:
+    #         query = text(f'SELECT "SK_ID_CURR", "{selected_features_str}" FROM train_df_debug WHERE "SK_ID_CURR" != {client_id} ORDER BY RANDOM() LIMIT {limit}')
+    #         query_client = text(f'SELECT "SK_ID_CURR", "{selected_features_str}" FROM train_df_debug WHERE "SK_ID_CURR" = {client_id}')
+    #     else:
+    #         query = text(f'SELECT "SK_ID_CURR", "{selected_features_str}" FROM train_df WHERE "SK_ID_CURR" != {client_id} ORDER BY RANDOM() LIMIT {limit} UNION ALL SELECT "SK_ID_CURR", "{selected_features_str}" FROM test_df WHERE "SK_ID_CURR" != {client_id} ORDER BY RANDOM() LIMIT {limit}')
+    #         query_client = text(f'SELECT "SK_ID_CURR", "{selected_features_str}" FROM train_df WHERE "SK_ID_CURR" = {client_id} UNION ALL SELECT "SK_ID_CURR", "{selected_features_str}" FROM test_df WHERE "SK_ID_CURR" = {client_id}')
+
+    # # Execute the query and read the result into a DataFrame
+    # df = pd.DataFrame() if pass_query else pd.read_sql_query(query, engine)
+    # row_client = pd.DataFrame() if pass_query else pd.read_sql_query(query_client, engine)
 
     concatenated_df = pd.concat([row_client, df], ignore_index=True)
 
