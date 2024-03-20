@@ -1,49 +1,43 @@
-import matplotlib.pyplot as plt
-import streamlit as st
-import requests
-import sqlite3
-import pandas as pd
-from typing import Tuple, Literal, Union
-from imblearn.over_sampling import SMOTE
-from imblearn .under_sampling import RandomUnderSampler
-from imblearn.pipeline import Pipeline
-import shap
-import numpy as np
-from streamlit_shap import st_shap
-import seaborn as sns
-import plotly.graph_objects as go
-from dotenv import load_dotenv
+# Standard library imports
 import os
-from sqlalchemy import create_engine, text, distinct, inspect, Table, MetaData, select, and_, or_, func, column
-# from sqlalchemy.sql import func
-from sqlalchemy.orm import sessionmaker
+
+# Third-party imports
+import numpy as np
+import pandas as pd
+import plotly.graph_objects as go
+import requests
+import seaborn as sns
+import shap
+import streamlit as st
+import matplotlib.pyplot as plt
+from dotenv import load_dotenv
+from sqlalchemy import create_engine, text
+from typing import Tuple, Literal, Union
+
+# imblearn imports
+from imblearn.over_sampling import SMOTE
+from imblearn.pipeline import Pipeline
+from imblearn.under_sampling import RandomUnderSampler
+
+# Local imports
+from streamlit_shap import st_shap
 
 # ENVIRONEMENT VARIABLES
 load_dotenv('dashboard.env')
 HEROKU_DATABASE_URI = os.getenv("DATABASE_URI")
+API_URI = os.getenv("API_URI")
 
 # COMMON FUNCTIONS
-
-# Function to toggle debug_mode
-def toggle_debug_mode():
-    st.session_state['debug_mode'] = not st.session_state['debug_mode']
-    st.session_state['client_id'] = None
-    st.session_state['shap']['initiated'] = False
-    st.session_state['shap']['Global']['loaded'] = False
-    st.session_state['shap']['Local']['loaded'] = False
 
 # Function to submit client id
 def submit_client_id(client_id: int):
     st.session_state['client_id'] = client_id
 
 # Function to get client infos from id number 
-def get_client_infos(client_id: int, output: Literal['dict', 'df'] = 'df', debug: bool = False, db_uri: str=HEROKU_DATABASE_URI)-> Union[dict, pd.DataFrame]:
+def get_client_infos(client_id: int, output: Literal['dict', 'df'] = 'df', db_uri: str=HEROKU_DATABASE_URI)-> Union[dict, pd.DataFrame]:
     engine = create_engine(db_uri)
 
-    if debug:
-        table_names = ['train_df_debug', 'test_df_debug']
-    else:
-        table_names = ['train_df', 'test_df']
+    table_names = ['train_df', 'test_df']
 
     query = text(f'SELECT * FROM {table_names[0]} WHERE "SK_ID_CURR" = :client_id UNION ALL SELECT * FROM {table_names[1]} WHERE "SK_ID_CURR" = :client_id ORDER BY "SK_ID_CURR"')
     with engine.connect() as conn:
@@ -73,6 +67,7 @@ def generate_full_palette(num_groups):
         selected_colors = sns.blend_palette(custom_colors, num_groups)
     
     return selected_colors
+
 def generate_palette_without_gold(num_groups):
     # Define custom colors without 'Gold'
     custom_colors = ['MidnightBlue', 'Steelblue', 'Darkturquoise', 'Paleturquoise', 'Coral', 'Firebrick', 'Maroon']
@@ -105,14 +100,7 @@ def generate_reduced_palette_without_gold(num_groups):
     
     return selected_colors
 
-def rename_columns_based_on_col_index(df, realnames):
-    # Rename columns based on realnames list
-    num_columns = min(len(df.columns), len(realnames))
-    for idx in range(num_columns):
-        df.rename(columns={df.columns[idx]: realnames[idx]}, inplace=True)
-    return df
-
-# SIDEBAR FUNCTIONS FOR SHAP INITIATION
+# SIDEBAR FUNCTIONS
 
 # Function to balance classes
 def balance_classes(X: pd.DataFrame, y: pd.Series, method: Literal['smote', 'randomundersampler']='randomundersampler')-> Tuple[pd.DataFrame, pd.Series]:
@@ -141,16 +129,12 @@ def balance_classes(X: pd.DataFrame, y: pd.Series, method: Literal['smote', 'ran
 
     return X_resampled, y_resampled
 
-def get_data_for_shap_initiation(debug: bool=False, db_uri=HEROKU_DATABASE_URI)-> pd.DataFrame:
+def get_data_for_shap_initiation(db_uri=HEROKU_DATABASE_URI, limit=3000)-> pd.DataFrame:
     engine = create_engine(db_uri)
-    if debug:
-        query = text(f'SELECT * FROM train_df_debug ORDER BY RANDOM() LIMIT 3000')
-        result = pd.read_sql_query(query, engine, index_col='SK_ID_CURR')
-        # conn.close()
-    else:
-        query = text(f'SELECT * FROM train_df UNION ALL SELECT * FROM test_df LIMIT 6000')
-        result = pd.read_sql_query(query, engine, index_col='SK_ID_CURR')
-        # conn.close()
+
+    query = text(f'SELECT * FROM train_df UNION ALL SELECT * FROM test_df LIMIT {limit*2}')
+    result = pd.read_sql_query(query, engine, index_col='SK_ID_CURR')
+    # conn.close()
 
     X_train, y_train = result.drop(columns=['level_0', 'index', 'TARGET']), result['TARGET']
     X_train_resampled, _ = balance_classes(X_train, y_train, method='randomundersampler')
@@ -159,9 +143,8 @@ def get_data_for_shap_initiation(debug: bool=False, db_uri=HEROKU_DATABASE_URI)-
 
     return data_for_shap_initiation
 
-def initiate_shap_explainer(api_url="http://127.0.0.1:8000/initiate_shap_explainer")-> None:
-    debug = st.session_state['debug_mode']
-    data_for_shap_initiation = get_data_for_shap_initiation(debug=debug)
+def initiate_shap_explainer(api_url=f"{API_URI}initiate_shap_explainer")-> None:
+    data_for_shap_initiation = get_data_for_shap_initiation()
     json_payload = data_for_shap_initiation.to_dict(orient='index')
     response = requests.post(api_url, json=json_payload)
     if response.status_code == 200:
@@ -183,9 +166,7 @@ def initiate_shap_explainer(api_url="http://127.0.0.1:8000/initiate_shap_explain
 
 # TAB 1 FUNCTIONS (CREDIT RISK PREDICTION)
         
-def get_model_threshold(api_url="http://127.0.0.1:8000/model_threshold")-> Union[dict,None]:
-    # Replace this URL with your actual API endpoint
-    api_url = api_url
+def get_model_threshold(api_url=f"{API_URI}model_threshold")-> Union[dict,None]:
     
     # Send POST request to API
     response = requests.get(api_url)
@@ -272,8 +253,8 @@ def display_credit_result(confidence, risk_category, threshold)-> None:
     new_gauge_plot(confidence, threshold, result_color)
 
 # Function to predict credit risk
-def predict_credit_risk(client_id: int, threshold: float, api_url="http://127.0.0.1:8000/predict_from_dict", debug: bool = False)-> None:
-    client_infos = get_client_infos(client_id=client_id, output='dict', debug=debug)
+def predict_credit_risk(client_id: int, threshold: float, api_url=f"{API_URI}predict_from_dict")-> None:
+    client_infos = get_client_infos(client_id=client_id, output='dict')
     json_payload_predict_from_dict = {
         'client_infos': client_infos,
         'threshold': threshold
@@ -296,9 +277,9 @@ def predict_credit_risk(client_id: int, threshold: float, api_url="http://127.0.
 # TAB 2 FUNCTIONS (FEATURE IMPORTANCE)
 
 # Function to get feature importance from API
-def get_built_in_global_feature_importance(api_url="http://127.0.0.1:8000/global_feature_importance")-> Union[dict,None]:
+def get_built_in_global_feature_importance(api_url=f"{API_URI}global_feature_importance")-> Union[dict,None]:
     # Replace this URL with your actual API endpoint
-    api_url = api_url
+    # api_url = api_url
     
     # Send POST request to API
     response = requests.get(api_url)
@@ -347,7 +328,7 @@ def display_built_in_global_feature_importance(model_type, nb_features, importan
     st.plotly_chart(fig, use_container_width=True)
 
 # Function to get shap feature importance from API
-def get_shap_feature_importance(client_id: Union[int, None], scale: Literal['Global', 'Local'], api_url: str="http://127.0.0.1:8000/shap_feature_importance", debug: bool = False)-> Union[dict, None]:
+def get_shap_feature_importance(client_id: Union[int, None], scale: Literal['Global', 'Local'], api_url: str=f"{API_URI}shap_feature_importance")-> Union[dict, None]:
     if scale == 'Global':
         result = {
         'shap_values': st.session_state['shap']['Global']['shap_values'],
@@ -357,7 +338,7 @@ def get_shap_feature_importance(client_id: Union[int, None], scale: Literal['Glo
         return result
     
     elif scale == 'Local' and client_id is not None:    
-        client_infos = get_client_infos(client_id=client_id, output='dict', debug=debug)
+        client_infos = get_client_infos(client_id=client_id, output='dict')
         json_payload_shap_feature_importance = {
             'client_infos': client_infos,
             'feature_scale': scale
@@ -412,14 +393,8 @@ def plot_shap(scale, features, shap_feature_importance_dict, nb_features: int=20
         )
 
 # Function to display shap feature importance
-def display_shap_feature_importance(client_id: Union[int, None], scale: Literal['Global', 'Local'], nb_features: int=20, debug: bool = False)-> None:
+def display_shap_feature_importance(client_id: Union[int, None], scale: Literal['Global', 'Local'], nb_features: int=20)-> None:
     if scale == 'Global':
-        # if not st.session_state['shap'][scale]['loaded']:
-        #     shap_feature_importance_dict = get_shap_feature_importance(client_id=client_id, scale=scale, api_url="http://127.0.0.1:8000/shap_feature_importance", debug=debug)
-        #     features = st.session_state['shap'][scale]['features']
-        #     plot_shap(scale=scale, features=features, shap_feature_importance_dict=shap_feature_importance_dict, nb_features=nb_features)
-        #     update_shap_session_state(scale=scale, features=features, shap_feature_importance_dict=shap_feature_importance_dict, client_id=client_id)
-        # else:
         shap_feature_importance_dict = {
             'features': st.session_state['shap'][scale]['features'],
             'shap_values': st.session_state['shap'][scale]['shap_values'],
@@ -429,7 +404,7 @@ def display_shap_feature_importance(client_id: Union[int, None], scale: Literal[
         plot_shap(scale=scale, features=st.session_state['shap'][scale]['features'], shap_feature_importance_dict=shap_feature_importance_dict, nb_features=nb_features)
     elif scale == 'Local':
         if not st.session_state['shap'][scale]['loaded'] or client_id is not st.session_state['shap'][scale]['client_id']:
-            shap_feature_importance_dict = get_shap_feature_importance(client_id=client_id, scale=scale, api_url="http://127.0.0.1:8000/shap_feature_importance", debug=debug)
+            shap_feature_importance_dict = get_shap_feature_importance(client_id=client_id, scale=scale, api_url="http://127.0.0.1:8000/shap_feature_importance")
             features = st.session_state['shap'][scale]['features']
             plot_shap(scale=scale, features=features, shap_feature_importance_dict=shap_feature_importance_dict, nb_features=nb_features)
             update_shap_session_state(scale=scale, features=features, shap_feature_importance_dict=shap_feature_importance_dict, client_id=client_id)
@@ -445,37 +420,30 @@ def display_shap_feature_importance(client_id: Union[int, None], scale: Literal[
 
 # TAB 3 FUNCTIONS (CLIENT COMPARISON)
 
-def fetch_cat_and_split_features(db_uri=HEROKU_DATABASE_URI, limit=7):
+def fetch_cat_and_split_features(db_uri=HEROKU_DATABASE_URI, nb_categories=7, limit=3000):
     global_features = st.session_state['available_features']['global_features']
-    debug = st.session_state['debug_mode']
     engine = create_engine(db_uri)
 
     # return categorical_cols, binary_cols
     connection = engine.connect()
 
     # Query the first table
-    if debug:
-        table1 = 'train_df_debug'
-        query = f"SELECT * FROM {table1} ORDER BY RANDOM() LIMIT {3000}"
-        df = pd.read_sql(query, connection)
-        df.drop(columns=['level_0'], inplace=True)
-    else:
-        table1 = 'train_df'
-        query = f"SELECT * FROM {table1} ORDER BY RANDOM() LIMIT {3000}"
-        df1 = pd.read_sql(query, connection)
-        table2 = 'test_df'
-        query = f"SELECT * FROM {table2} ORDER BY RANDOM() LIMIT {3000}"
-        df2 = pd.read_sql(query, connection)
-        df = pd.concat([df1, df2], axis=0)
-        df.drop(columns=['level_0'], inplace=True)
+    table1 = 'train_df'
+    query = f"SELECT * FROM {table1} ORDER BY RANDOM() LIMIT {limit}"
+    df1 = pd.read_sql(query, connection)
+    table2 = 'test_df'
+    query = f"SELECT * FROM {table2} ORDER BY RANDOM() LIMIT {limit}"
+    df2 = pd.read_sql(query, connection)
+    df = pd.concat([df1, df2], axis=0)
+    df.drop(columns=['level_0'], inplace=True)
 
-    # Find categorical columns with no more than 'limit' unique values and binary features
+    # Find categorical columns with no more than 'nb_categories' unique values and binary features
     categorical_cols = []
     binary_cols = []
     for col in df.columns:
         if col != 'SK_ID_CURR':
             unique_values = df[col].nunique()
-            if unique_values <= limit:
+            if unique_values <= nb_categories:
                 categorical_cols.append(col)
             if unique_values == 2:
                 binary_cols.append(col)
@@ -508,14 +476,13 @@ def update_available_features():
         'split_features': split_features
     }
 
-def update_violinplot_data(db_uri=HEROKU_DATABASE_URI):#selected_global_feature: str, selected_categorical_feature: str, selected_split_feature: str, client_id: int, limit: int, debug: bool=False):
+def update_violinplot_data(db_uri=HEROKU_DATABASE_URI):
 
     selected_global_feature = st.session_state['client_comparison']['global']
     selected_categorical_feature = st.session_state['client_comparison']['categorical']
     selected_split_feature = st.session_state['client_comparison']['split']
     client_id = st.session_state['client_id']
-    limit = 3000
-    debug = st.session_state['debug_mode']
+    limit = st.session_state['limit']
 
     # Retrieve data
     # conn = sqlite3.connect('C:/Users/emile/DEV/WORKSPACE/projet-7-cours-oc/model/model/features/clients_infos.db')
@@ -530,59 +497,32 @@ def update_violinplot_data(db_uri=HEROKU_DATABASE_URI):#selected_global_feature:
         selected_features = [feat for feat in [selected_global_feature, selected_categorical_feature, selected_split_feature] if feat is not None]
         selected_features_str = '", "'.join(selected_features)
 
-        if debug:
-            query = text(f'''
-                WITH random_train AS (
-                    SELECT "SK_ID_CURR", "{selected_features_str}"
-                    FROM train_df_debug
-                    WHERE "SK_ID_CURR" != {client_id}
-                    ORDER BY RANDOM()
-                    LIMIT {limit}
-                )
-                SELECT * FROM random_train
-            ''')
-            query_client = text(f'SELECT "SK_ID_CURR", "{selected_features_str}" FROM train_df_debug WHERE "SK_ID_CURR" = {client_id}')
-        else:
-            query = text(f'''
-                WITH random_train AS (
-                    SELECT "SK_ID_CURR", "{selected_features_str}"
-                    FROM train_df
-                    WHERE "SK_ID_CURR" != {client_id}
-                    ORDER BY RANDOM()
-                    LIMIT {limit}
-                ),
-                random_test AS (
-                    SELECT "SK_ID_CURR", "{selected_features_str}"
-                    FROM test_df
-                    WHERE "SK_ID_CURR" != {client_id}
-                    ORDER BY RANDOM()
-                    LIMIT {limit}
-                )
-                SELECT * FROM random_train
-                UNION ALL
-                SELECT * FROM random_test
-            ''')
-            query_client = text(f'SELECT "SK_ID_CURR", "{selected_features_str}" FROM train_df WHERE "SK_ID_CURR" = {client_id} UNION ALL SELECT "SK_ID_CURR", "{selected_features_str}" FROM test_df WHERE "SK_ID_CURR" = {client_id}')
+        query = text(f'''
+            WITH random_train AS (
+                SELECT "SK_ID_CURR", "{selected_features_str}"
+                FROM train_df
+                WHERE "SK_ID_CURR" != {client_id}
+                ORDER BY RANDOM()
+                LIMIT {limit}
+            ),
+            random_test AS (
+                SELECT "SK_ID_CURR", "{selected_features_str}"
+                FROM test_df
+                WHERE "SK_ID_CURR" != {client_id}
+                ORDER BY RANDOM()
+                LIMIT {limit}
+            )
+            SELECT * FROM random_train
+            UNION ALL
+            SELECT * FROM random_test
+        ''')
+        query_client = text(f'SELECT "SK_ID_CURR", "{selected_features_str}" FROM train_df WHERE "SK_ID_CURR" = {client_id} UNION ALL SELECT "SK_ID_CURR", "{selected_features_str}" FROM test_df WHERE "SK_ID_CURR" = {client_id}')
 
     # Execute the query and read the result into a DataFrame
     df = pd.DataFrame() if pass_query else pd.read_sql_query(query, engine)
     row_client = pd.DataFrame() if pass_query else pd.read_sql_query(query_client, engine)
 
-    #     if debug:
-    #         query = text(f'SELECT "SK_ID_CURR", "{selected_features_str}" FROM train_df_debug WHERE "SK_ID_CURR" != {client_id} ORDER BY RANDOM() LIMIT {limit}')
-    #         query_client = text(f'SELECT "SK_ID_CURR", "{selected_features_str}" FROM train_df_debug WHERE "SK_ID_CURR" = {client_id}')
-    #     else:
-    #         query = text(f'SELECT "SK_ID_CURR", "{selected_features_str}" FROM train_df WHERE "SK_ID_CURR" != {client_id} ORDER BY RANDOM() LIMIT {limit} UNION ALL SELECT "SK_ID_CURR", "{selected_features_str}" FROM test_df WHERE "SK_ID_CURR" != {client_id} ORDER BY RANDOM() LIMIT {limit}')
-    #         query_client = text(f'SELECT "SK_ID_CURR", "{selected_features_str}" FROM train_df WHERE "SK_ID_CURR" = {client_id} UNION ALL SELECT "SK_ID_CURR", "{selected_features_str}" FROM test_df WHERE "SK_ID_CURR" = {client_id}')
-
-    # # Execute the query and read the result into a DataFrame
-    # df = pd.DataFrame() if pass_query else pd.read_sql_query(query, engine)
-    # row_client = pd.DataFrame() if pass_query else pd.read_sql_query(query_client, engine)
-
     concatenated_df = pd.concat([row_client, df], ignore_index=True)
-
-    # Close the connection
-    # conn.close()
 
     st.session_state['client_comparison']['data'] = concatenated_df
 
