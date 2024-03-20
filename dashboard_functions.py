@@ -23,7 +23,7 @@ from imblearn.under_sampling import RandomUnderSampler
 from streamlit_shap import st_shap
 
 # ENVIRONEMENT VARIABLES
-load_dotenv('dashboard.env')
+# load_dotenv('dashboard.env')
 HEROKU_DATABASE_URI = os.getenv("DATABASE_URI")
 API_URI = os.getenv("API_URI")
 
