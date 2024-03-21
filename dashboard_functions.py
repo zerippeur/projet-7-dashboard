@@ -6,7 +6,6 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import requests
-import seaborn as sns
 import shap
 import streamlit as st
 import matplotlib.pyplot as plt
