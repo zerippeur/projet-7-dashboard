@@ -22,6 +22,7 @@ from imblearn.under_sampling import RandomUnderSampler
 from streamlit_shap import st_shap
 
 # ENVIRONEMENT VARIABLES
+
 # load_dotenv('dashboard.env')
 HEROKU_DATABASE_URI = os.getenv("DATABASE_URI")
 API_URI = os.getenv("API_URI")
@@ -481,7 +482,7 @@ def update_violinplot_data(db_uri=HEROKU_DATABASE_URI):
     selected_categorical_feature = st.session_state['client_comparison']['categorical']
     selected_split_feature = st.session_state['client_comparison']['split']
     client_id = st.session_state['client_id']
-    limit = st.session_state['limit']
+    limit = 3000
 
     # Retrieve data
     # conn = sqlite3.connect('C:/Users/emile/DEV/WORKSPACE/projet-7-cours-oc/model/model/features/clients_infos.db')
