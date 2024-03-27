@@ -404,7 +404,7 @@ def display_shap_feature_importance(client_id: Union[int, None], scale: Literal[
         plot_shap(scale=scale, features=st.session_state['shap'][scale]['features'], shap_feature_importance_dict=shap_feature_importance_dict, nb_features=nb_features)
     elif scale == 'Local':
         if not st.session_state['shap'][scale]['loaded'] or client_id is not st.session_state['shap'][scale]['client_id']:
-            shap_feature_importance_dict = get_shap_feature_importance(client_id=client_id, scale=scale, api_url="http://127.0.0.1:8000/shap_feature_importance")
+            shap_feature_importance_dict = get_shap_feature_importance(client_id=client_id, scale=scale, api_url=f"{API_URI}shap_feature_importance")
             features = st.session_state['shap'][scale]['features']
             plot_shap(scale=scale, features=features, shap_feature_importance_dict=shap_feature_importance_dict, nb_features=nb_features)
             update_shap_session_state(scale=scale, features=features, shap_feature_importance_dict=shap_feature_importance_dict, client_id=client_id)
