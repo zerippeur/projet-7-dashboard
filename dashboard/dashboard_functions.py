@@ -24,7 +24,11 @@ from streamlit_shap import st_shap
 
 # ENVIRONEMENT VARIABLES
 
-load_dotenv('dashboard/dashboard.env')
+try:
+    load_dotenv('dashboard/dashboard.env')
+except FileNotFoundError:
+    pass
+
 HEROKU_DATABASE_URI = os.getenv("DATABASE_URI")
 API_URI = os.getenv("API_URI")
 
