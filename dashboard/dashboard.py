@@ -4,7 +4,7 @@ import streamlit as st
 
 # Local imports
 from dashboard_functions import get_model_threshold
-from dashboard_functions import submit_client_id, predict_credit_risk
+from dashboard_functions import predict_credit_risk
 from dashboard_functions import get_built_in_global_feature_importance
 from dashboard_functions import display_built_in_global_feature_importance
 from dashboard_functions import initiate_shap_explainer, display_shap_feature_importance
@@ -15,11 +15,12 @@ from dashboard_functions import display_violinplot, fetch_cat_and_split_features
 st.set_page_config(layout="wide")
 st.title(body='Credit risk prediction app')
 
-tab1, tab2, tab3 = st.tabs(
+tab1, tab2, tab3, tab4 = st.tabs(
     tabs=[
-        ':clipboard: Credit risk prediction',
+        ':computer: Credit risk prediction',
         ':bar_chart: Feature importance',
-        ':chart_with_upwards_trend: Client comparison'
+        ':mag: Client comparison',
+        ':clipboard: About'
     ]
 )
 
@@ -83,22 +84,21 @@ available_importance_types = list(imp_dict.keys())
 importance_scale = ['Global', 'Local']
 available_explainer_types = ['Built-in', 'Shap']
 
-client_id = st.sidebar.number_input(
+st.session_state['client_id'] = st.sidebar.number_input(
     label='Client ID',
     min_value=0,
     max_value=1000000,
     value=None,
     step=1,
     format='%i',
-    placeholder='Enter client ID'    
+    placeholder='Enter client ID'
 )
 
-submit_id = st.sidebar.button(
-    label='Submit client ID',
-    on_click=submit_client_id(client_id), 
-    key='submit_id'
+st.sidebar.caption(
+    body='Client ID use cases:\n - 108567: SAFE (Credit approved)\n'
+         ' - 110084: NOPE (Credit rejected)',
+    unsafe_allow_html=True
 )
-
 
 shap_initiation = st.sidebar.button(
     label='Initiate Shap explainer',
@@ -129,12 +129,14 @@ with tab1:
              'the credit application needs further investigation before approval or rejection.'
     )
     if st.session_state['client_id'] is not None:
-        predict = st.button('Predict credit risk', key='predict')
-        if predict:
-            predict_credit_risk(
-                client_id=st.session_state['client_id'],
-                threshold=st.session_state['threshold']
-            )
+        with st.container(border=True):
+            st.subheader(body='Gauge graph', divider='red')
+            predict = st.button('Predict credit risk', key='predict')
+            if predict:
+                predict_credit_risk(
+                    client_id=st.session_state['client_id'],
+                    threshold=st.session_state['threshold']
+                )
     else:
         st.warning(body='Please enter a client ID in the sidebar section.', icon="⚠️")
 
@@ -182,6 +184,7 @@ with tab2:
                 index=0,
                 horizontal=True
             )
+            st.subheader(body='Global feature importance graph', divider='grey')
             display_built_in_global_feature_importance(
                 model_type=model_type,
                 nb_features=nb_features,
@@ -202,7 +205,7 @@ with tab2:
                     index=0,
                     horizontal=True
                 )
-
+                st.subheader(body=f'Shap {str.lower(feature_scale)} feature importance graph', divider='grey')
                 if feature_scale == 'Global':
                     display_shap_feature_importance(
                         client_id=st.session_state['client_id'],
@@ -256,7 +259,7 @@ with tab3:
     ):
         with st.container(border=True):
             st.session_state['tab_3_selected_importance_type'] = st.radio(
-                label="Order available feature by feature importance type:",
+                label="Order available features by feature importance type:",
                 options=available_importance_types,
                 index=0,
                 horizontal=True,
@@ -264,18 +267,19 @@ with tab3:
             )
         
         with st.container(border=True):
+            st.subheader(body='Features selectors', divider='red')
             col1, col2, col3 = st.columns(3)
-        col1.subheader(body='Global', divider='red')
+        col1.subheader(body='Global feature', divider='grey')
         col1.caption(body='Main feature for global comparison')
-        col1.caption(body='y-axis scale - Mandatory')
+        col1.caption(body='*y-axis scale - Mandatory*')
 
-        col2.subheader(body='Category', divider='red')
+        col2.subheader(body='Category feature', divider='grey')
         col2.caption(body='Second feature for category')
-        col2.caption(body='x-axis groups - Optionnal')
+        col2.caption(body='*x-axis groups - Optionnal*')
 
-        col3.subheader(body='Split', divider='red')
+        col3.subheader(body='Split feature', divider='grey')
         col3.caption(body='Third feature for categories split')
-        col3.caption(body='violin sides - Optionnal')
+        col3.caption(body='*violin sides - Optionnal*')
  
         update_available_features()
 
@@ -318,3 +322,63 @@ with tab3:
         show_data = st.expander(label='Show selected data')
         show_data.write(st.session_state['client_comparison']['data'])
         display_violinplot()
+
+with tab4:
+    st.write('Current client ID:', st.session_state['client_id'])
+    st.header(body='Project summary', divider='red')
+    st.caption(
+        body='This is an OpenClassrooms project. The goal of this project is to predict the risk '
+             'for a specific client to experience difficulties repaying his credit.'
+    )
+    with st.container(border=True):
+        st.subheader(body='Data sources', divider='red')
+        st.caption(
+            body='This project relies on the *"Home Credit Default Risk"* kaggle project: '
+                 '<p><a href="https://www.kaggle.com/competitions/home-credit-default-risk/overview" target="_blank">Project overview</a></p>'
+                 'We used the following code from a competitor as a reference for the data engineering process: '
+                 '<p><a href="https://www.kaggle.com/code/jsaguiar/lightgbm-with-simple-features" target="_blank">Reference project</a></p>',
+            unsafe_allow_html=True
+        )
+    with st.container(border=True):
+        st.subheader(body='Dashboard overview', divider='red')
+        with st.container():
+            st.subheader(body='Sidebar section', divider='grey')
+            col1, col2, col3 = st.columns(3)
+            col1.markdown(
+                body='Client ID input'
+            )
+            col1.caption(
+                body='    ID of the client to predict credit risk for.'
+            )
+            col2.markdown(
+                body='Initiate Shap explainer'
+            )
+            col2.caption(
+                body='    Send request to prediction api to initiate shap explainer and get global scale'
+                    'shap values (see tab 2).'
+            )
+            col3.markdown(
+                body='Initiate available features'
+            )
+            col3.caption(
+                body='    Send request to prediction api to initiate available features for client '
+                    'comparison graphs (see tab 3).'
+            )
+            with st.container():
+                st.subheader(body='Tabs', divider='grey')
+                col1, col2, col3 = st.columns(3)
+                col1.subheader(body='Tab 1: Credit risk prediction')
+                col1.caption(
+                    body='Gauge graph showing the prediction for the current client ID.'
+                )
+                col2.subheader(body='Tab 2: Feature importance')
+                col2.caption(
+                    body='Built-in and shap feature importance. Global and local scales.'
+                        'Initiate Shap explainer for shap feature importance (see sidebar section).'
+                        ' Input client ID for local scale.'
+                )
+                col3.subheader(body='Tab 3: Client comparison')
+                col3.caption(
+                    body='Compare current client with other clients using violinplots (see tab 3 for '
+                        'more details).'
+            )

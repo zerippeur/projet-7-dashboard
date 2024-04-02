@@ -12,7 +12,7 @@ import streamlit as st
 import matplotlib.pyplot as plt
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
-from typing import Tuple, Literal, Union
+from typing import Tuple, Literal, Union, List
 
 # imblearn imports
 from imblearn.over_sampling import SMOTE
@@ -24,36 +24,66 @@ from streamlit_shap import st_shap
 
 # ENVIRONEMENT VARIABLES
 
-# load_dotenv('dashboard.env')
+load_dotenv('dashboard/dashboard.env')
 HEROKU_DATABASE_URI = os.getenv("DATABASE_URI")
 API_URI = os.getenv("API_URI")
 
 # COMMON FUNCTIONS
 
-# Function to submit client id
-def submit_client_id(client_id: int):
-    st.session_state['client_id'] = client_id
-
 # Function to get client infos from id number 
-def get_client_infos(client_id: int, output: Literal['dict', 'df'] = 'df', db_uri: str=HEROKU_DATABASE_URI)-> Union[dict, pd.DataFrame]:
+def get_client_infos(client_id: int, output: Literal['dict', 'df'] = 'df', db_uri: str=HEROKU_DATABASE_URI) -> Union[dict, pd.DataFrame]:
+    """
+    Get client infos from database.
+
+    Parameters:
+    -----------
+    client_id: int
+        The client id to get infos from
+    output: Literal['dict', 'df']
+        The output format of the function. Can be either 'dict' or 'df'
+    db_uri: str
+        The database URI
+
+    Returns:
+    --------
+    Union[dict, pd.DataFrame]
+        The client infos in the requested format.
+    """
     engine = create_engine(db_uri)
 
     table_names = ['train_df', 'test_df']
 
+    # SQL query to select infos from both tables where the client id matches
     query = text(f'SELECT * FROM {table_names[0]} WHERE "SK_ID_CURR" = :client_id UNION ALL SELECT * FROM {table_names[1]} WHERE "SK_ID_CURR" = :client_id ORDER BY "SK_ID_CURR"')
     with engine.connect() as conn:
         result = pd.read_sql_query(query, conn, params={'client_id': client_id}, index_col='SK_ID_CURR')
 
     if output == 'dict':
+        # Convert the dataframe to a dictionary indexed by the client id
         model_dict = result.drop(columns=['level_0', 'index', 'TARGET']).to_dict(orient='index')
+        # Extract the client infos from the dictionary
         client_infos = model_dict[client_id]
         return client_infos
     elif output == 'df':
+        # Drop the unnecessary columns and return the resulting dataframe
         client_infos = result.drop(columns=['level_0', 'index', 'TARGET'])
         return client_infos
 
 # Function to generate accessible palettes based on the number of groups to colorize
 def generate_full_palette(num_groups):
+    """
+    Generate a custom palette based on the number of groups to colorize.
+
+    Parameters:
+    -----------
+    num_groups: int
+        The number of groups to colorize.
+
+    Returns:
+    --------
+    list
+        A list of custom colors for the given number of groups.
+    """
     # Define custom colors
     custom_colors = ['MidnightBlue', 'Steelblue', 'Darkturquoise', 'Paleturquoise', 'Gold', 'Coral', 'Firebrick', 'Maroon']
 
@@ -69,7 +99,24 @@ def generate_full_palette(num_groups):
     
     return selected_colors
 
-def generate_palette_without_gold(num_groups):
+def generate_palette_without_gold(num_groups: int) -> list[str]:
+    """
+    Generate a custom palette based on the number of groups to colorize without 'Gold'.
+
+    The function generates a custom palette based on the number of groups to colorize. If the number of groups
+    is less than or equal to the length of the custom colors, the function uses them directly. Otherwise, it
+    generates a blend palette using 'sns.blend_palette'.
+
+    Parameters:
+    -----------
+    num_groups: int
+        The number of groups to colorize.
+
+    Returns:
+    --------
+    list
+        A list of custom colors for the given number of groups without 'Gold'.
+    """
     # Define custom colors without 'Gold'
     custom_colors = ['MidnightBlue', 'Steelblue', 'Darkturquoise', 'Paleturquoise', 'Coral', 'Firebrick', 'Maroon']
 
@@ -85,7 +132,24 @@ def generate_palette_without_gold(num_groups):
     
     return selected_colors
 
-def generate_reduced_palette_without_gold(num_groups):
+def generate_reduced_palette_without_gold(num_groups: int) -> list[str]:
+    """
+    Generate a palette of custom colors without 'Gold' for the given number of groups.
+
+    If the number of groups is less than or equal to the length of the custom colors,
+    return a list of colors directly. If the number of groups is greater than the length
+    of the custom colors, create a blend palette.
+
+    Parameters:
+    -----------
+    num_groups: int
+        The number of groups to colorize.
+
+    Returns:
+    --------
+    List[str]
+        A list of custom colors for the given number of groups without 'Gold'.
+    """
     # Define custom colors without 'Gold'
     custom_colors = ['MidnightBlue', 'Steelblue', 'Darkturquoise', 'Firebrick', 'Maroon']
 
@@ -104,33 +168,68 @@ def generate_reduced_palette_without_gold(num_groups):
 # SIDEBAR FUNCTIONS
 
 # Function to balance classes
-def balance_classes(X: pd.DataFrame, y: pd.Series, method: Literal['smote', 'randomundersampler']='randomundersampler')-> Tuple[pd.DataFrame, pd.Series]:
+def balance_classes(X: pd.DataFrame, y: pd.Series, method: str='randomundersampler') -> Tuple[pd.DataFrame, pd.Series]:
     """
     Balance classes in the dataset using SMOTE or RandomUnderSampler.
 
-    Args:
-        X: Features. Accepts either a pandas DataFrame or a numpy array.
-        y: Target variable. Accepts either a pandas Series or a numpy array.
-        method: Method to use for balancing. Options: 'smote' or 'randomundersampler'.
-            Defaults to 'smote'.
+    This function balances the classes in the dataset using one of the two methods: SMOTE or RandomUnderSampler.
+    The method is specified by the user and can be either 'smote' or 'randomundersampler'.
+
+    Parameters:
+    -----------
+    X: Features. Accepts a pandas DataFrame or a numpy array.
+    y: Target variable. Accepts a pandas Series or a numpy array.
+    method: Method to use for balancing. Options: 'smote' or 'randomundersampler'.
+        Defaults to 'randomundersampler'.
 
     Returns:
-        Balanced feature set and target variable. Returns a tuple containing the balanced feature set and target variable,
+    --------
+    X_resampled, y_resampled: Balanced feature set and target variable. Returns a tuple containing the balanced feature set and target variable,
         which can be either a pandas DataFrame or a numpy array depending on the input types.
     """
-    sampler_dict = {'smote': SMOTE(sampling_strategy='auto', random_state=42),
-                    'randomundersampler': RandomUnderSampler(sampling_strategy='auto', random_state=42)}
+    # Dictionary to store the samplers, keyed by method
+    sampler_dict = {
+        'smote': SMOTE(sampling_strategy='auto', random_state=42),
+        'randomundersampler': RandomUnderSampler(sampling_strategy='auto', random_state=42)
+    }
+
+    # Get the sampler from the dictionary using the provided method
     sampler = sampler_dict.get(method.lower())
-    
+
+    # Raise an error if the method is not in the dictionary
     if sampler is None:
         raise ValueError("Invalid method. Choose 'smote' or 'randomundersampler'.")
-    
+
+    # Create a pipeline with the chosen sampler
     pipeline = Pipeline([('sampler', sampler)])
+
+    # Fit the pipeline and transform the data
     X_resampled, y_resampled = pipeline.named_steps['sampler'].fit_resample(X, y)
 
     return X_resampled, y_resampled
 
-def get_data_for_shap_initiation(db_uri=HEROKU_DATABASE_URI, limit=3000)-> pd.DataFrame:
+
+def get_data_for_shap_initiation(db_uri=HEROKU_DATABASE_URI, limit=3000) -> pd.DataFrame:
+    """
+    Get data for SHAP initiation.
+
+    This function gets data from the database, merges the train and test sets, and
+    then resamples the data using RandomUnderSampler. The resulting dataset is
+    returned.
+
+    Parameters:
+    -----------
+    db_uri: str
+        The database URI to connect to.
+    limit: int
+        The maximum number of samples to include in the resampled dataset.
+        Defaults to 3000.
+
+    Returns:
+    --------
+    data_for_shap_initiation: pandas.DataFrame
+        The resampled dataset to use for SHAP initiation.
+    """
     engine = create_engine(db_uri)
 
     query = text(f'SELECT * FROM train_df UNION ALL SELECT * FROM test_df LIMIT {limit*2}')
@@ -138,49 +237,97 @@ def get_data_for_shap_initiation(db_uri=HEROKU_DATABASE_URI, limit=3000)-> pd.Da
     # conn.close()
 
     X_train, y_train = result.drop(columns=['level_0', 'index', 'TARGET']), result['TARGET']
+
+    # Resample the data to balance the classes
     X_train_resampled, _ = balance_classes(X_train, y_train, method='randomundersampler')
 
     data_for_shap_initiation = X_train_resampled
 
     return data_for_shap_initiation
 
-def initiate_shap_explainer(api_url=f"{API_URI}initiate_shap_explainer")-> None:
+def initiate_shap_explainer(api_url=f"{API_URI}initiate_shap_explainer") -> None:
+    """
+    Initiate the SHAP explainer by sending a POST request to the API.
+
+    This function gets the data for SHAP initiation, converts it to a dictionary of
+    index-value pairs, and sends it as a JSON payload in a POST request to the API.
+    If the request is successful, the function updates the relevant Streamlit session
+    state with the SHAP values, feature names, and expected value.
+
+    Parameters:
+    -----------
+    api_url: str
+        The URL of the API endpoint to send the request to.
+
+    Returns:
+    --------
+    None
+    """
     data_for_shap_initiation = get_data_for_shap_initiation()
-    json_payload = data_for_shap_initiation.to_dict(orient='index')
+    json_payload = data_for_shap_initiation.to_dict(orient="index")
     response = requests.post(api_url, json=json_payload)
     if response.status_code == 200:
         result = response.json()
-        shap_values = result['shap_values']
-        feature_names = result['feature_names']
-        expected_value = result['expected_value']
+        shap_values = result["shap_values"]
+        feature_names = result["feature_names"]
+        expected_value = result["expected_value"]
         st.success("Shap explainer initiated successfully")
-        st.session_state['shap']['initiated'] = True
-        st.session_state['shap']['Global']['loaded'] = True
-        st.session_state['shap']['Global']['features'] = data_for_shap_initiation
-        st.session_state['shap']['Global']['shap_values'] = shap_values
-        st.session_state['shap']['Global']['feature_names'] = feature_names
-        st.session_state['shap']['Global']['expected_value'] = expected_value
-
+        st.session_state["shap"]["initiated"] = True
+        st.session_state["shap"]["Global"]["loaded"] = True
+        st.session_state["shap"]["Global"]["features"] = data_for_shap_initiation
+        st.session_state["shap"]["Global"]["shap_values"] = shap_values
+        st.session_state["shap"]["Global"]["feature_names"] = feature_names
+        st.session_state["shap"]["Global"]["expected_value"] = expected_value
     else:
         st.error("Error initiating shap explainer")
 
 
 # TAB 1 FUNCTIONS (CREDIT RISK PREDICTION)
         
-def get_model_threshold(api_url=f"{API_URI}model_threshold")-> Union[dict,None]:
-    
-    # Send POST request to API
+def get_model_threshold(api_url=f"{API_URI}model_threshold") -> Union[dict, None]:
+    """Send a GET request to the model_threshold endpoint of the API to retrieve the threshold value used to classify a credit as risky or not.
+
+    Parameters:
+    -----------
+    api_url: str, optional
+        The URL of the API endpoint to send the request to.
+        Defaults to "{API_URI}model_threshold".
+
+    Returns:
+    --------
+    Union[dict, None]
+        A dictionary containing the threshold value if the API call was successful.
+        None if the API call failed.
+    """
+
+    # Send GET request to API
     response = requests.get(api_url)
 
     if response.status_code == 200:
         result = response.json()
         return result['threshold']
     else:
-        st.error("Error fetching feature importance from API")
+        st.error("Error fetching model threshold from API")
         return None
 
 def new_gauge_plot(confidence, threshold, result_color)-> None:
+    """
+    Create a new gauge plot.
+    
+    Parameters:
+    -----------
+    confidence: float
+        The credit repayment confidence.
+    threshold: float
+        The credit repayment threshold.
+    result_color: str
+        The color of the confidence number.
 
+    Returns:
+    --------
+    None
+
+    """
     fig = go.Figure(go.Indicator(
         mode = "gauge+number+delta",
         value = confidence*100,
@@ -222,15 +369,28 @@ def new_gauge_plot(confidence, threshold, result_color)-> None:
     fig.update_layout(
         xaxis_visible=False,
         yaxis_visible=False,
-        # legend_itemsizing='constant',
-        # legend_itemwidth=30
     )
 
     st.plotly_chart(fig, use_container_width=True)
 
 # Function to display credit result
 def display_credit_result(confidence, risk_category, threshold)-> None:
+    """
+    Function to display the credit result.
 
+    Parameters:
+    -----------
+    confidence: float
+        The credit repayment confidence.
+    risk_category: str
+        The credit repayment risk category.
+    threshold: float
+        The credit repayment threshold.
+
+    Returns:
+    --------
+    None
+    """
     risk_categories = {
         'SAFE': 'Darkturquoise',
         'RISKY': 'Coral',
@@ -240,13 +400,18 @@ def display_credit_result(confidence, risk_category, threshold)-> None:
     result_color = risk_categories[risk_category]
     threshold_color = 'Gold'
     # chance_percentage = confidence * 100 if prediction == 0 else 100 - confidence * 100
-    st.markdown(f"## Credit result: <span style='color:{result_color}'>{risk_category}</span>", unsafe_allow_html=True)
-    st.markdown(f"#### According to our prediction model,"
-                f" you have a <span style='color:{result_color}'>{confidence*100:.2f}%</span>"
-                " chance to repay your loan without risk.\n"
-                f"#### Our threshold is fixed at <span style='color:{threshold_color}'>{(1-threshold)*100:.2f}%</span>."
-                " Please see feature importance or client informations for more information.",
-                unsafe_allow_html=True)
+    st.markdown(
+        f"## Credit result: <span style='color:{result_color}'>{risk_category}</span>",
+        unsafe_allow_html=True
+    )
+    st.markdown(
+        "#### According to our prediction model, you have a <span style='color:"
+        f"{result_color}'>{confidence*100:.2f}%</span> chance to repay your loan without risk.\n"
+        f"#### Our threshold is fixed at <span style='color:{threshold_color}'>"
+        f"{(1-threshold)*100:.2f}%</span>. Please see feature importance or client informations "
+        "for more details.",
+        unsafe_allow_html=True
+    )
 
     # Display confidence as a gauge
     st.markdown("### Credit risk profile:")
@@ -254,7 +419,25 @@ def display_credit_result(confidence, risk_category, threshold)-> None:
     new_gauge_plot(confidence, threshold, result_color)
 
 # Function to predict credit risk
-def predict_credit_risk(client_id: int, threshold: float, api_url=f"{API_URI}predict_from_dict")-> None:
+def predict_credit_risk(
+        client_id: int, threshold: float, api_url=f"{API_URI}predict_from_dict"
+    )-> None:
+    """
+    Function to predict credit risk based on a dictionary input.
+
+    Parameters:
+    -----------
+    client_id: int
+        The ID of the client.
+    threshold: float
+        The credit repayment threshold.
+    api_url: str
+        The URL of the API endpoint.
+
+    Returns:
+    --------
+    None
+    """
     client_infos = get_client_infos(client_id=client_id, output='dict')
     json_payload_predict_from_dict = {
         'client_infos': client_infos,
@@ -278,9 +461,22 @@ def predict_credit_risk(client_id: int, threshold: float, api_url=f"{API_URI}pre
 # TAB 2 FUNCTIONS (FEATURE IMPORTANCE)
 
 # Function to get feature importance from API
-def get_built_in_global_feature_importance(api_url=f"{API_URI}global_feature_importance")-> Union[dict,None]:
-    # Replace this URL with your actual API endpoint
-    # api_url = api_url
+def get_built_in_global_feature_importance(
+        api_url: str=f"{API_URI}global_feature_importance"
+    )-> Union[dict,None]:
+    """
+    Function to get feature importance from API.
+
+    Parameters:
+    -----------
+    api_url: str
+        The URL of the API endpoint.
+        
+    Returns:
+    --------
+    dict
+        The feature importance dictionary.
+    """
     
     # Send POST request to API
     response = requests.get(api_url)
@@ -292,8 +488,23 @@ def get_built_in_global_feature_importance(api_url=f"{API_URI}global_feature_imp
         st.error("Error fetching feature importance from API")
         return None
 
-def display_built_in_global_feature_importance(model_type, nb_features, importance_type):
-    st.markdown("### Feature importance")
+def display_built_in_global_feature_importance(model_type: str, nb_features: int, importance_type: str)-> None:
+    """
+    Function to display the built-in global feature importance.
+
+    Parameters:
+    -----------
+    model_type: str
+        The type of the model.
+    nb_features: int
+        The number of top features to display.
+    importance_type: str
+        The type of importance to display.
+
+    Returns:
+    --------
+    None
+    """
     if model_type in ['XGBClassifier', 'RandomForestClassifier', 'LGBMClassifier']:
         feature_importance = st.session_state['feature_importance']['feature_importance'][importance_type]
         importance = importance_type
@@ -302,7 +513,11 @@ def display_built_in_global_feature_importance(model_type, nb_features, importan
         return
     
     # Sort features by importance
-    top_features = sorted(feature_importance.items(), key=lambda x: x[1], reverse=True)[:nb_features][-1::-1]
+    top_features = sorted(
+        feature_importance.items(),
+        key=lambda x: x[1],
+        reverse=True
+    )[:nb_features][-1::-1]
     
     # Extract feature names and importance values
     feature_names = [x[0] for x in top_features]
@@ -320,8 +535,15 @@ def display_built_in_global_feature_importance(model_type, nb_features, importan
 
     fig.update_layout(
         title=f'Top {nb_features} Features - {model_type}',
-        yaxis=dict(title='Feature', titlefont=dict(size=15), tickfont=dict(size=12)),
-        xaxis=dict(title=f'{importance.capitalize()} score', titlefont=dict(size=15), tickfont=dict(size=12)),
+        yaxis=dict(title='Feature',
+                   titlefont=dict(size=15),
+                   tickfont=dict(size=12)
+                ),
+        xaxis=dict(
+            title=f'{importance.capitalize()} score',
+            titlefont=dict(size=15),
+            tickfont=dict(size=12)
+        ),
         height=300*nb_features/10 + 100,  # Adjust the height based on the number of features
 
     )
@@ -329,7 +551,28 @@ def display_built_in_global_feature_importance(model_type, nb_features, importan
     st.plotly_chart(fig, use_container_width=True)
 
 # Function to get shap feature importance from API
-def get_shap_feature_importance(client_id: Union[int, None], scale: Literal['Global', 'Local'], api_url: str=f"{API_URI}shap_feature_importance")-> Union[dict, None]:
+def get_shap_feature_importance(
+        client_id: Union[int, None],
+        scale: Literal['Global', 'Local'],
+        api_url: str=f"{API_URI}shap_feature_importance"
+    )-> Union[dict, None]:
+    """
+    Function to get shap feature importance from API.
+
+    Parameters:
+    -----------
+    client_id: int
+        The ID of the client.
+    scale: str
+        The scale of the feature importance.
+    api_url: str
+        The URL of the API endpoint.
+
+    Returns:
+    --------
+    dict
+        The shap feature importance dictionary.
+    """
     if scale == 'Global':
         result = {
         'shap_values': st.session_state['shap']['Global']['shap_values'],
@@ -360,7 +603,25 @@ def get_shap_feature_importance(client_id: Union[int, None], scale: Literal['Glo
         return None
 
 # Function to update shap session state
-def update_shap_session_state(scale, features, shap_feature_importance_dict, client_id):	
+def update_shap_session_state(scale: Literal['Global', 'Local'], features: list, shap_feature_importance_dict: dict, client_id: Union[int, None]=None)-> None:
+    """
+    Function to update shap session state.
+
+    Parameters:
+    -----------
+    scale: str
+        The scale of the feature importance.
+    features: list
+        The list of features.
+    shap_feature_importance_dict: dict
+        The shap feature importance dictionary.
+    client_id: int
+        The ID of the client.
+
+    Returns:
+    --------
+    None
+    """	
     st.session_state['shap'][scale]['loaded'] = True
     st.session_state['shap'][scale]['features'] = features
     st.session_state['shap'][scale]['shap_values'] = shap_feature_importance_dict['shap_values']
@@ -370,7 +631,25 @@ def update_shap_session_state(scale, features, shap_feature_importance_dict, cli
         st.session_state['shap'][scale]['client_id'] = client_id
 
 # Function to display shap feature importance
-def plot_shap(scale, features, shap_feature_importance_dict, nb_features: int=20):
+def plot_shap(scale: Literal['Global', 'Local'], features: list, shap_feature_importance_dict: dict, nb_features: int=20)-> None:
+    """
+    Function to display shap feature importance.
+    
+    Parameters:
+    -----------
+    scale: str
+        The scale of the feature importance.
+    features: list
+        The list of features.
+    shap_feature_importance_dict: dict
+        The shap feature importance dictionary.
+    nb_features: int
+        The number of features to display.
+
+    Returns:
+    --------
+    None
+    """
     shap_values = np.array(shap_feature_importance_dict['shap_values'])
     feature_names = np.array(shap_feature_importance_dict['feature_names'])
     expected_value = shap_feature_importance_dict['expected_value']
@@ -394,7 +673,25 @@ def plot_shap(scale, features, shap_feature_importance_dict, nb_features: int=20
         )
 
 # Function to display shap feature importance
-def display_shap_feature_importance(client_id: Union[int, None], scale: Literal['Global', 'Local'], nb_features: int=20)-> None:
+def display_shap_feature_importance(
+        client_id: Union[int, None], scale: Literal['Global', 'Local'], nb_features: int=20
+    )-> None:
+    """
+    Function to display shap feature importance.
+
+    Parameters:
+    -----------
+    client_id: int
+        The ID of the client.
+    scale: str
+        The scale of the feature importance.
+    nb_features: int
+        The number of features to display.
+
+    Returns:
+    --------
+    None
+    """
     if scale == 'Global':
         shap_feature_importance_dict = {
             'features': st.session_state['shap'][scale]['features'],
@@ -402,13 +699,34 @@ def display_shap_feature_importance(client_id: Union[int, None], scale: Literal[
             'feature_names': st.session_state['shap'][scale]['feature_names'],
             'expected_value': st.session_state['shap'][scale]['expected_value']
         }
-        plot_shap(scale=scale, features=st.session_state['shap'][scale]['features'], shap_feature_importance_dict=shap_feature_importance_dict, nb_features=nb_features)
+        plot_shap(
+            scale=scale,
+            features=st.session_state['shap'][scale]['features'],
+            shap_feature_importance_dict=shap_feature_importance_dict,
+            nb_features=nb_features
+        )
     elif scale == 'Local':
-        if not st.session_state['shap'][scale]['loaded'] or client_id is not st.session_state['shap'][scale]['client_id']:
-            shap_feature_importance_dict = get_shap_feature_importance(client_id=client_id, scale=scale, api_url=f"{API_URI}shap_feature_importance")
+        if (not st.session_state['shap'][scale]['loaded']
+            or client_id is not st.session_state['shap'][scale]['client_id']
+        ):
+            shap_feature_importance_dict = get_shap_feature_importance(
+                client_id=client_id,
+                scale=scale,
+                api_url=f"{API_URI}shap_feature_importance"
+            )
             features = st.session_state['shap'][scale]['features']
-            plot_shap(scale=scale, features=features, shap_feature_importance_dict=shap_feature_importance_dict, nb_features=nb_features)
-            update_shap_session_state(scale=scale, features=features, shap_feature_importance_dict=shap_feature_importance_dict, client_id=client_id)
+            plot_shap(
+                scale=scale,
+                features=features,
+                shap_feature_importance_dict=shap_feature_importance_dict,
+                nb_features=nb_features
+            )
+            update_shap_session_state(
+                scale=scale,
+                features=features,
+                shap_feature_importance_dict=shap_feature_importance_dict,
+                client_id=client_id
+            )
         else:
             shap_feature_importance_dict = {
                 'features': st.session_state['shap'][scale]['features'],
@@ -416,12 +734,37 @@ def display_shap_feature_importance(client_id: Union[int, None], scale: Literal[
                 'feature_names': st.session_state['shap'][scale]['feature_names'],
                 'expected_value': st.session_state['shap'][scale]['expected_value']
             }
-            plot_shap(scale=scale, features=st.session_state['shap'][scale]['features'], shap_feature_importance_dict=shap_feature_importance_dict, nb_features=nb_features)
+            plot_shap(
+                scale=scale,
+                features=st.session_state['shap'][scale]['features'],
+                shap_feature_importance_dict=shap_feature_importance_dict,
+                nb_features=nb_features
+            )
 
 
 # TAB 3 FUNCTIONS (CLIENT COMPARISON)
 
-def fetch_cat_and_split_features(db_uri=HEROKU_DATABASE_URI, nb_categories=7, limit=3000):
+def fetch_cat_and_split_features(
+        db_uri: str=HEROKU_DATABASE_URI,
+        nb_categories: int=7,
+        limit: int=3000
+    )-> None:
+    """
+    Function to fetch the categorical and binary features from the database.
+
+    Parameters:
+    -----------
+    db_uri: str
+        The URI of the database.
+    nb_categories: int
+        The number of categories to display.
+    limit: int
+        The number of rows to fetch.
+
+    Returns:
+    --------
+    None
+    """
     global_features = st.session_state['available_features']['global_features']
     engine = create_engine(db_uri)
 
@@ -462,9 +805,26 @@ def fetch_cat_and_split_features(db_uri=HEROKU_DATABASE_URI, nb_categories=7, li
     st.session_state['available_features']['split_features'] = binary_cols
     st.session_state['available_features']['initiated'] = True
 
-def update_available_features():
+def update_available_features()-> None:
+    """
+    Function to update the available features in the session state.
+    Features are used in tab 3 for ploting the client comparison violinplots.
+
+    Parameters:
+    -----------
+    None
+
+    Returns:
+    --------
+    None
+    """
     importance_type = st.session_state['tab_3_selected_importance_type']
-    global_features = [key for key, _ in sorted(st.session_state['feature_importance']['feature_importance'][importance_type].items(), key=lambda item: item[1], reverse=True)]
+    global_features = [
+        key for key, _ in sorted(
+            st.session_state['feature_importance']['feature_importance'][importance_type].items(),
+            key=lambda item: item[1],
+            reverse=True
+        )]
     categorical_features = [feature for feature in global_features if feature in st.session_state['available_features']['categorical_features']]
     split_features = [feature for feature in global_features if feature in st.session_state['available_features']['split_features']]
     categorical_features.insert(0, 'TARGET')
