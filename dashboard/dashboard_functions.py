@@ -271,10 +271,11 @@ def get_data_for_shap_initiation(db_uri=HEROKU_DATABASE_URI, limit=3000) -> pd.D
     data_for_shap_initiation: pandas.DataFrame
         The resampled dataset to use for SHAP initiation.
     """
+    limit = limit*2
     engine = create_engine(db_uri)
 
-    query = text(f'SELECT * FROM train_df UNION ALL SELECT * FROM test_df LIMIT {limit*2}')
-    result = pd.read_sql_query(query, engine, index_col='SK_ID_CURR')
+    query = text(f'SELECT * FROM train_df UNION ALL SELECT * FROM test_df LIMIT :limit')
+    result = pd.read_sql_query(query, engine, index_col='SK_ID_CURR', params={'limit': limit})
     # conn.close()
 
     X_train, y_train = result.drop(columns=['level_0', 'index', 'TARGET']), result['TARGET']
@@ -864,11 +865,11 @@ def fetch_cat_and_split_features(
 
     # Query the first table
     table1 = 'train_df'
-    query = f"SELECT * FROM {table1} ORDER BY RANDOM() LIMIT {limit}"
-    df1 = pd.read_sql(query, connection)
+    query = f"SELECT * FROM {table1} ORDER BY RANDOM() LIMIT :limit"
+    df1 = pd.read_sql_query(query, connection, params={'limit': limit})
     table2 = 'test_df'
-    query = f"SELECT * FROM {table2} ORDER BY RANDOM() LIMIT {limit}"
-    df2 = pd.read_sql(query, connection)
+    query = f"SELECT * FROM {table2} ORDER BY RANDOM() LIMIT :limit"
+    df2 = pd.read_sql_query(query, connection, params={'limit': limit})
     df = pd.concat([df1, df2], axis=0)
     df.drop(columns=['level_0'], inplace=True)
 
@@ -980,7 +981,7 @@ def update_violinplot_data(db_uri: str=HEROKU_DATABASE_URI) -> None:
             UNION ALL
             SELECT * FROM random_test
         ''')
-        
+
         query_client = text(
             f'SELECT "SK_ID_CURR", "{selected_features_str}" '
             'FROM train_df '
@@ -992,8 +993,8 @@ def update_violinplot_data(db_uri: str=HEROKU_DATABASE_URI) -> None:
         )
 
     # Execute the query and read the result into a DataFrame
-    df = pd.DataFrame() if pass_query else pd.read_sql_query(query, engine)
-    row_client = pd.DataFrame() if pass_query else pd.read_sql_query(query_client, engine)
+    df = pd.DataFrame() if pass_query else pd.read_sql_query(query, engine, params={'client_id': client_id, 'limit': limit})
+    row_client = pd.DataFrame() if pass_query else pd.read_sql_query(query_client, engine, params={'client_id': client_id})
 
     concatenated_df = pd.concat([row_client, df], ignore_index=True)
 
