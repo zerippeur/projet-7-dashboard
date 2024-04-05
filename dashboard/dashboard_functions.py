@@ -250,7 +250,7 @@ def balance_classes(
     return X_resampled, y_resampled
 
 
-def get_data_for_shap_initiation(db_uri=HEROKU_DATABASE_URI, limit=3000) -> pd.DataFrame:
+def get_data_for_shap_initiation(db_uri=HEROKU_DATABASE_URI, limit=2000) -> pd.DataFrame:
     """
     Get data for SHAP initiation.
 
@@ -264,7 +264,7 @@ def get_data_for_shap_initiation(db_uri=HEROKU_DATABASE_URI, limit=3000) -> pd.D
         The database URI to connect to.
     limit: int
         The maximum number of samples to include in the resampled dataset.
-        Defaults to 3000.
+        Defaults to 2000.
 
     Returns:
     --------
