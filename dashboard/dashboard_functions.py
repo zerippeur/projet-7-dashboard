@@ -35,7 +35,11 @@ API_URI = os.getenv("API_URI")
 # COMMON FUNCTIONS
 
 # Function to get client infos from id number 
-def get_client_infos(client_id: int, output: Literal['dict', 'df'] = 'df', db_uri: str=HEROKU_DATABASE_URI) -> Union[dict, pd.DataFrame]:
+def get_client_infos(
+        client_id: int,
+        output: Literal['dict', 'df'] = 'df',
+        db_uri: str=HEROKU_DATABASE_URI
+    ) -> Union[dict, pd.DataFrame]:
     """
     Get client infos from database.
 
@@ -58,9 +62,23 @@ def get_client_infos(client_id: int, output: Literal['dict', 'df'] = 'df', db_ur
     table_names = ['train_df', 'test_df']
 
     # SQL query to select infos from both tables where the client id matches
-    query = text(f'SELECT * FROM {table_names[0]} WHERE "SK_ID_CURR" = :client_id UNION ALL SELECT * FROM {table_names[1]} WHERE "SK_ID_CURR" = :client_id ORDER BY "SK_ID_CURR"')
+    query = text(
+        'SELECT * '
+        f'FROM {table_names[0]} '
+        'WHERE "SK_ID_CURR" = :client_id '
+        f'UNION ALL '
+        'SELECT * '
+        f'FROM {table_names[1]} '
+        'WHERE "SK_ID_CURR" = :client_id '
+        'ORDER BY "SK_ID_CURR"'
+    )
     with engine.connect() as conn:
-        result = pd.read_sql_query(query, conn, params={'client_id': client_id}, index_col='SK_ID_CURR')
+        result = pd.read_sql_query(
+            query,
+            conn,
+            params={'client_id': client_id},
+            index_col='SK_ID_CURR'
+        )
 
     if output == 'dict':
         # Convert the dataframe to a dictionary indexed by the client id
@@ -74,7 +92,7 @@ def get_client_infos(client_id: int, output: Literal['dict', 'df'] = 'df', db_ur
         return client_infos
 
 # Function to generate accessible palettes based on the number of groups to colorize
-def generate_full_palette(num_groups):
+def generate_full_palette(num_groups: int) -> list[str]:
     """
     Generate a custom palette based on the number of groups to colorize.
 
@@ -89,16 +107,21 @@ def generate_full_palette(num_groups):
         A list of custom colors for the given number of groups.
     """
     # Define custom colors
-    custom_colors = ['MidnightBlue', 'Steelblue', 'Darkturquoise', 'Paleturquoise', 'Gold', 'Coral', 'Firebrick', 'Maroon']
+    custom_colors = [
+        'MidnightBlue', 'Steelblue', 'Darkturquoise', 'Paleturquoise',
+        'Gold', 'Coral', 'Firebrick', 'Maroon'
+    ]
 
-    # If the number of groups is less than or equal to the length of custom_colors, use them directly
+    # If the number of groups is less than or equal to the length of custom_colors,
+    # use them directly
     if num_groups <= len(custom_colors):
         # Calculate the indices to select colors centered around 'Paleturquoise' and 'Gold'
         start_index = max(0, len(custom_colors) // 2 - num_groups // 2)
         end_index = min(len(custom_colors), start_index + num_groups)
         selected_colors = custom_colors[start_index:end_index]
     else:
-        # If the number of groups is greater than the length of custom_colors, create a blend palette
+        # If the number of groups is greater than the length of custom_colors,
+        # create a blend palette
         selected_colors = sns.blend_palette(custom_colors, num_groups)
     
     return selected_colors
@@ -107,9 +130,10 @@ def generate_palette_without_gold(num_groups: int) -> list[str]:
     """
     Generate a custom palette based on the number of groups to colorize without 'Gold'.
 
-    The function generates a custom palette based on the number of groups to colorize. If the number of groups
-    is less than or equal to the length of the custom colors, the function uses them directly. Otherwise, it
-    generates a blend palette using 'sns.blend_palette'.
+    The function generates a custom palette based on the number of groups to colorize.
+    If the number of groups is less than or equal to the length of the custom colors,
+    the function uses them directly. Otherwise, it generates a blend palette
+    using 'sns.blend_palette'.
 
     Parameters:
     -----------
@@ -122,16 +146,21 @@ def generate_palette_without_gold(num_groups: int) -> list[str]:
         A list of custom colors for the given number of groups without 'Gold'.
     """
     # Define custom colors without 'Gold'
-    custom_colors = ['MidnightBlue', 'Steelblue', 'Darkturquoise', 'Paleturquoise', 'Coral', 'Firebrick', 'Maroon']
+    custom_colors = [
+        'MidnightBlue', 'Steelblue', 'Darkturquoise', 'Paleturquoise',
+        'Coral', 'Firebrick', 'Maroon'
+    ]
 
-    # If the number of groups is less than or equal to the length of custom_colors, use them directly
+    # If the number of groups is less than or equal to the length of custom_colors,
+    # use them directly
     if num_groups <= len(custom_colors):
         # Calculate the indices to select colors centered around 'Paleturquoise'
         start_index = max(0, len(custom_colors) // 2 - (num_groups - 1) // 2)
         end_index = min(len(custom_colors), start_index + num_groups)
         selected_colors = custom_colors[start_index:end_index]
     else:
-        # If the number of groups is greater than the length of custom_colors, create a blend palette
+        # If the number of groups is greater than the length of custom_colors,
+        # create a blend palette
         selected_colors = sns.blend_palette(custom_colors, num_groups)
     
     return selected_colors
@@ -157,14 +186,16 @@ def generate_reduced_palette_without_gold(num_groups: int) -> list[str]:
     # Define custom colors without 'Gold'
     custom_colors = ['MidnightBlue', 'Steelblue', 'Darkturquoise', 'Firebrick', 'Maroon']
 
-    # If the number of groups is less than or equal to the length of custom_colors, use them directly
+    # If the number of groups is less than or equal to the length of custom_colors,
+    # use them directly
     if num_groups <= len(custom_colors):
         # Calculate the indices to select colors centered around 'Paleturquoise'
         start_index = max(0, len(custom_colors) // 2 - (num_groups - 1) // 2)
         end_index = min(len(custom_colors), start_index + num_groups)
         selected_colors = custom_colors[start_index:end_index]
     else:
-        # If the number of groups is greater than the length of custom_colors, create a blend palette
+        # If the number of groups is greater than the length of custom_colors,
+        # create a blend palette
         selected_colors = sns.blend_palette(custom_colors, num_groups)
     
     return selected_colors
@@ -172,11 +203,16 @@ def generate_reduced_palette_without_gold(num_groups: int) -> list[str]:
 # SIDEBAR FUNCTIONS
 
 # Function to balance classes
-def balance_classes(X: pd.DataFrame, y: pd.Series, method: str='randomundersampler') -> Tuple[pd.DataFrame, pd.Series]:
+def balance_classes(
+        X: pd.DataFrame,
+        y: pd.Series,
+        method: str='randomundersampler'
+    ) -> tuple[pd.DataFrame, pd.Series]:
     """
     Balance classes in the dataset using SMOTE or RandomUnderSampler.
 
-    This function balances the classes in the dataset using one of the two methods: SMOTE or RandomUnderSampler.
+    This function balances the classes in the dataset using one of the two methods:
+    - SMOTE or RandomUnderSampler.
     The method is specified by the user and can be either 'smote' or 'randomundersampler'.
 
     Parameters:
@@ -188,7 +224,8 @@ def balance_classes(X: pd.DataFrame, y: pd.Series, method: str='randomundersampl
 
     Returns:
     --------
-    X_resampled, y_resampled: Balanced feature set and target variable. Returns a tuple containing the balanced feature set and target variable,
+    X_resampled, y_resampled: Balanced feature set and target variable.
+        Returns a tuple containing the balanced feature set and target variable,
         which can be either a pandas DataFrame or a numpy array depending on the input types.
     """
     # Dictionary to store the samplers, keyed by method
@@ -289,7 +326,8 @@ def initiate_shap_explainer(api_url=f"{API_URI}initiate_shap_explainer") -> None
 # TAB 1 FUNCTIONS (CREDIT RISK PREDICTION)
         
 def get_model_threshold(api_url=f"{API_URI}model_threshold") -> Union[dict, None]:
-    """Send a GET request to the model_threshold endpoint of the API to retrieve the threshold value used to classify a credit as risky or not.
+    """Send a GET request to the model_threshold endpoint of the API
+    to retrieve the threshold value used to classify a credit as risky or not.
 
     Parameters:
     -----------
@@ -314,7 +352,11 @@ def get_model_threshold(api_url=f"{API_URI}model_threshold") -> Union[dict, None
         st.error("Error fetching model threshold from API")
         return None
 
-def new_gauge_plot(confidence, threshold, result_color)-> None:
+def new_gauge_plot(
+        confidence: float,
+        threshold: float,
+        result_color: str
+    )-> None:
     """
     Create a new gauge plot.
     
@@ -337,10 +379,18 @@ def new_gauge_plot(confidence, threshold, result_color)-> None:
         value = confidence*100,
         domain = {'x': [0, 1], 'y': [0, 1]},
         title = {'text': "Credit repayment confidence", 'font': {'size': 30}},
-        delta = {'reference': (1-threshold)*100, 'increasing': {'color': "Darkturquoise"}, 'decreasing': {'color': "Firebrick"}},
+        delta = {
+            'reference': (1-threshold)*100, 'increasing': {'color': "Darkturquoise"},
+            'decreasing': {'color': "Firebrick"}
+        },
         gauge = {
-            'axis': {'range': [None, 100], 'tickwidth': 3, 'tickfont': {'size': 20, 'color': "white"}, 'tickcolor': "white",
-                     'tickvals': [0, 20, 40, 60, 80, (1-threshold)*100, 100], 'ticktext': ['0%', '20%', '40%', '60%', '80%', f'{(1-threshold)*100:.2f}%', '100%'], 'tickangle': 0},
+            'axis': {
+                'range': [None, 100], 'tickwidth': 3, 'tickfont': {'size': 20, 'color': "white"},
+                'tickcolor': "white", 'tickvals': [0, 20, 40, 60, 80, (1-threshold)*100, 100],
+                'ticktext': [
+                    '0%', '20%', '40%', '60%', '80%', f'{(1-threshold)*100:.2f}%', '100%'
+                ], 'tickangle': 0
+            },
             'bar': {'color': "white"},
             'bgcolor': "white",
             'borderwidth': 2,
@@ -353,16 +403,25 @@ def new_gauge_plot(confidence, threshold, result_color)-> None:
                 'line': {'color': "Gold", 'width': 4},
                 'thickness': 1,
                 'value': (1-threshold)*100}},
-        number = {'font': {'size': 70, 'color': result_color}, 'suffix': ' %', 'valueformat': '.2f'}))
+        number = {'font': {'size': 70, 'color': result_color}, 'suffix': ' %',
+                  'valueformat': '.2f'}
+    ))
 
     # Add legend for gauge steps and threshold
-    for name, color, symbol in zip([f"SAFE: {(1-threshold)*100:.2f}% to 100%", f"Threshold: {(1-threshold)*100:.2f}%", f"RISKY: {(1-threshold)*100 - 5:.2f}% to {(1-threshold)*100:.2f}%", f"NOPE: 0% to {(1-threshold)*100 - 5:.2f}%"], ["Darkturquoise", "Gold", "Coral", "Firebrick"], ["square", "line-ew", "square", "square"]):
+    for name, color, symbol in zip([
+        f"SAFE: {(1-threshold)*100:.2f}% to 100%", f"Threshold: {(1-threshold)*100:.2f}%",
+        f"RISKY: {(1-threshold)*100 - 5:.2f}% to {(1-threshold)*100:.2f}%",
+        f"NOPE: 0% to {(1-threshold)*100 - 5:.2f}%"
+    ], ["Darkturquoise", "Gold", "Coral", "Firebrick"], ["square", "line-ew", "square", "square"]):
         fig.add_traces(go.Scatter(
             x=[None],
             y=[None],
             mode="markers",
             name=name,
-            marker=dict(size=30, color=color, symbol=symbol, line=dict(color="white" if symbol == "square" else color, width=2)),
+            marker=dict(
+                size=30, color=color, symbol=symbol,
+                line=dict(color="white" if symbol == "square" else color, width=2)
+            ),
         ))
         fig.update_traces(
             marker_size=30,
@@ -378,7 +437,11 @@ def new_gauge_plot(confidence, threshold, result_color)-> None:
     st.plotly_chart(fig, use_container_width=True)
 
 # Function to display credit result
-def display_credit_result(confidence, risk_category, threshold)-> None:
+def display_credit_result(
+        confidence: float,
+        risk_category: str,
+        threshold: float
+    )-> None:
     """
     Function to display the credit result.
 
@@ -424,7 +487,9 @@ def display_credit_result(confidence, risk_category, threshold)-> None:
 
 # Function to predict credit risk
 def predict_credit_risk(
-        client_id: int, threshold: float, api_url=f"{API_URI}predict_from_dict"
+        client_id: int,
+        threshold: float,
+        api_url: str=f"{API_URI}predict_from_dict"
     )-> None:
     """
     Function to predict credit risk based on a dictionary input.
@@ -492,7 +557,11 @@ def get_built_in_global_feature_importance(
         st.error("Error fetching feature importance from API")
         return None
 
-def display_built_in_global_feature_importance(model_type: str, nb_features: int, importance_type: str)-> None:
+def display_built_in_global_feature_importance(
+        model_type: str,
+        nb_features: int,
+        importance_type: str
+    )-> None:
     """
     Function to display the built-in global feature importance.
 
@@ -510,7 +579,9 @@ def display_built_in_global_feature_importance(model_type: str, nb_features: int
     None
     """
     if model_type in ['XGBClassifier', 'RandomForestClassifier', 'LGBMClassifier']:
-        feature_importance = st.session_state['feature_importance']['feature_importance'][importance_type]
+        feature_importance = (
+            st.session_state['feature_importance']['feature_importance'][importance_type]
+        )
         importance = importance_type
     else:
         st.error("Error: Unsupported model type")
@@ -607,7 +678,12 @@ def get_shap_feature_importance(
         return None
 
 # Function to update shap session state
-def update_shap_session_state(scale: Literal['Global', 'Local'], features: list, shap_feature_importance_dict: dict, client_id: Union[int, None]=None)-> None:
+def update_shap_session_state(
+        scale: Literal['Global', 'Local'],
+        features: list,
+        shap_feature_importance_dict: dict,
+        client_id: Union[int, None]=None
+    )-> None:
     """
     Function to update shap session state.
 
@@ -629,13 +705,22 @@ def update_shap_session_state(scale: Literal['Global', 'Local'], features: list,
     st.session_state['shap'][scale]['loaded'] = True
     st.session_state['shap'][scale]['features'] = features
     st.session_state['shap'][scale]['shap_values'] = shap_feature_importance_dict['shap_values']
-    st.session_state['shap'][scale]['feature_names'] = shap_feature_importance_dict['feature_names']
-    st.session_state['shap'][scale]['expected_value'] = shap_feature_importance_dict['expected_value']
+    st.session_state['shap'][scale]['feature_names'] = (
+        shap_feature_importance_dict['feature_names']
+    )
+    st.session_state['shap'][scale]['expected_value'] = (
+        shap_feature_importance_dict['expected_value']
+    )
     if scale == 'Local':
         st.session_state['shap'][scale]['client_id'] = client_id
 
 # Function to display shap feature importance
-def plot_shap(scale: Literal['Global', 'Local'], features: list, shap_feature_importance_dict: dict, nb_features: int=20)-> None:
+def plot_shap(
+        scale: Literal['Global', 'Local'],
+        features: list,
+        shap_feature_importance_dict: dict,
+        nb_features: int=20
+    )-> None:
     """
     Function to display shap feature importance.
     
@@ -678,7 +763,9 @@ def plot_shap(scale: Literal['Global', 'Local'], features: list, shap_feature_im
 
 # Function to display shap feature importance
 def display_shap_feature_importance(
-        client_id: Union[int, None], scale: Literal['Global', 'Local'], nb_features: int=20
+        client_id: Union[int, None],
+        scale: Literal['Global', 'Local'],
+        nb_features: int=20
     )-> None:
     """
     Function to display shap feature importance.
@@ -829,8 +916,14 @@ def update_available_features()-> None:
             key=lambda item: item[1],
             reverse=True
         )]
-    categorical_features = [feature for feature in global_features if feature in st.session_state['available_features']['categorical_features']]
-    split_features = [feature for feature in global_features if feature in st.session_state['available_features']['split_features']]
+    categorical_features = [
+        feature for feature in global_features
+        if feature in st.session_state['available_features']['categorical_features']
+    ]
+    split_features = [
+        feature for feature in global_features
+        if feature in st.session_state['available_features']['split_features']
+    ]
     categorical_features.insert(0, 'TARGET')
     split_features.insert(0, 'TARGET')
 
@@ -841,7 +934,7 @@ def update_available_features()-> None:
         'split_features': split_features
     }
 
-def update_violinplot_data(db_uri=HEROKU_DATABASE_URI):
+def update_violinplot_data(db_uri: str=HEROKU_DATABASE_URI) -> None:
 
     selected_global_feature = st.session_state['client_comparison']['global']
     selected_categorical_feature = st.session_state['client_comparison']['categorical']
@@ -850,38 +943,53 @@ def update_violinplot_data(db_uri=HEROKU_DATABASE_URI):
     limit = 3000
 
     # Retrieve data
-    # conn = sqlite3.connect('C:/Users/emile/DEV/WORKSPACE/projet-7-cours-oc/model/model/features/clients_infos.db')
     engine = create_engine(db_uri)
 
     pass_query = False
     query = ""
     # Build the query based on the provided columns
-    if selected_global_feature is None and selected_categorical_feature is None and selected_split_feature is None:
+    if (selected_global_feature is None
+        and selected_categorical_feature is None
+        and selected_split_feature is None
+    ):
         pass_query = True
     else:
-        selected_features = [feat for feat in [selected_global_feature, selected_categorical_feature, selected_split_feature] if feat is not None]
+        selected_features = [
+            feat for feat
+            in [selected_global_feature, selected_categorical_feature, selected_split_feature]
+            if feat is not None
+        ]
         selected_features_str = '", "'.join(selected_features)
 
         query = text(f'''
             WITH random_train AS (
                 SELECT "SK_ID_CURR", "{selected_features_str}"
                 FROM train_df
-                WHERE "SK_ID_CURR" != {client_id}
+                WHERE "SK_ID_CURR" != :client_id
                 ORDER BY RANDOM()
-                LIMIT {limit}
+                LIMIT :limit
             ),
             random_test AS (
                 SELECT "SK_ID_CURR", "{selected_features_str}"
                 FROM test_df
-                WHERE "SK_ID_CURR" != {client_id}
+                WHERE "SK_ID_CURR" != :client_id
                 ORDER BY RANDOM()
-                LIMIT {limit}
+                LIMIT :limit
             )
             SELECT * FROM random_train
             UNION ALL
             SELECT * FROM random_test
         ''')
-        query_client = text(f'SELECT "SK_ID_CURR", "{selected_features_str}" FROM train_df WHERE "SK_ID_CURR" = {client_id} UNION ALL SELECT "SK_ID_CURR", "{selected_features_str}" FROM test_df WHERE "SK_ID_CURR" = {client_id}')
+        
+        query_client = text(
+            f'SELECT "SK_ID_CURR", "{selected_features_str}" '
+            'FROM train_df '
+            f'WHERE "SK_ID_CURR" = :client_id '
+            'UNION ALL '
+            f'SELECT "SK_ID_CURR", "{selected_features_str}" '
+            'FROM test_df '
+            f'WHERE "SK_ID_CURR" = :client_id'
+        )
 
     # Execute the query and read the result into a DataFrame
     df = pd.DataFrame() if pass_query else pd.read_sql_query(query, engine)
@@ -891,7 +999,7 @@ def update_violinplot_data(db_uri=HEROKU_DATABASE_URI):
 
     st.session_state['client_comparison']['data'] = concatenated_df
 
-def display_violinplot():
+def display_violinplot() -> None:
     df = st.session_state['client_comparison']['data']
     client_id = st.session_state['client_id']
     if df.shape[1] > 0:
@@ -910,33 +1018,57 @@ def display_violinplot():
     else:
         plot_split_violin(df, client_id)
 
-def plot_split_violin(df: pd.DataFrame, client_id: int):
+def plot_split_violin(df: pd.DataFrame, client_id: int) -> None:
     global_feature = df.columns[0]
     categorical_feature = df.columns[1]
     split_feature = df.columns[2]
     palette = generate_palette_without_gold(2)
-    client_color = palette[0] if df[split_feature][client_id] == df[split_feature].unique()[0] else palette[1]
+    client_color = (
+        palette[0] if df[split_feature][client_id] == df[split_feature].unique()[0]
+        else palette[1]
+    )
     client_line_color = 'Gold'
 
     plt.clf()
     fig = go.Figure()
 
-    for split, side, color in zip(df[split_feature].unique(), ['negative', 'positive'], palette):
+    for split, side, color in zip(
+        df[split_feature].unique(),
+        ['negative', 'positive'],
+        palette
+    ):
         fig.add_trace(go.Violin(
             x=df[categorical_feature][ df[split_feature] == split ],
             y=df[global_feature][ df[split_feature] == split ],
-            legendgroup=str(split), scalegroup=str(split), name=str(split), side=side, line_color=color, box_visible=True
+            legendgroup=str(split), scalegroup=str(split), name=str(split), side=side,
+            line_color=color, box_visible=True
         ))
-    fig.update_traces(meanline_visible=True, points='all', jitter=0.2, scalemode='count', marker=dict(size=1))
+    fig.update_traces(
+        meanline_visible=True, points='all', jitter=0.2, scalemode='count', marker=dict(size=1)
+    )
     fig.add_trace(go.Scatter(
-        x=[df[categorical_feature][client_id]], y=[df[global_feature][client_id]], name=f'Current client: ID = {client_id} | Split group = {df[split_feature][client_id]}', mode='markers', marker=dict(color=client_color, size=15, line_width=3, line_color=client_line_color)
+        x=[df[categorical_feature][client_id]], y=[df[global_feature][client_id]],
+        name=f'Current client: ID = {client_id} | Split group = {df[split_feature][client_id]}',
+        mode='markers',
+        marker=dict(color=client_color, size=15, line_width=3, line_color=client_line_color)
     ))
-    fig.update_traces(text=f'Current client: ID = {client_id} | Split group:{str(df[split_feature][client_id])}', selector=dict(type='scatter'))
-    fig.update_layout(violingap=0, violinmode='overlay', title_text='Client comparison', yaxis_title=f"Global feature: {global_feature}", xaxis_title=f"Categorical feature: {categorical_feature}", xaxis_tickformat='.0f', xaxis_tickvals=list(df[categorical_feature].sort_values().unique()))
-    fig.update_layout(legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1, title=f'Split feature: {split_feature}'))
+    fig.update_traces(
+        text=f'Current client: ID = {client_id} | Split group:{str(df[split_feature][client_id])}',
+        selector=dict(type='scatter')
+    )
+    fig.update_layout(
+        violingap=0, violinmode='overlay', title_text='Client comparison',
+        yaxis_title=f"Global feature: {global_feature}",
+        xaxis_title=f"Categorical feature: {categorical_feature}", xaxis_tickformat='.0f',
+        xaxis_tickvals=list(df[categorical_feature].sort_values().unique())
+    )
+    fig.update_layout(legend=dict(
+            orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1,
+            title=f'Split feature: {split_feature}'
+        ))
     st.plotly_chart(fig, use_container_width=True)
 
-def plot_categorical_violin(df: pd.DataFrame, client_id: int):
+def plot_categorical_violin(df: pd.DataFrame, client_id: int) -> None:
     global_feature = df.columns[0]
     categorical_feature = df.columns[1]
     palette = generate_palette_without_gold(len(df[categorical_feature].unique()))
@@ -948,18 +1080,31 @@ def plot_categorical_violin(df: pd.DataFrame, client_id: int):
         fig.add_trace(go.Violin(
             x=df[categorical_feature][ df[categorical_feature] == cat ],
             y=df[global_feature][ df[categorical_feature] == cat ],
-            legendgroup=str(cat), scalegroup=str(cat), name=str(cat), line_color=color, box_visible=True
+            legendgroup=str(cat), scalegroup=str(cat), name=str(cat), line_color=color,
+            box_visible=True
         ))
-    fig.update_traces(meanline_visible=True, points='all', jitter=0.2, scalemode='count', marker=dict(size=1))
+    fig.update_traces(
+        meanline_visible=True, points='all', jitter=0.2, scalemode='count', marker=dict(size=1)
+    )
     fig.add_trace(go.Scatter(
-        x=[df[categorical_feature][client_id]], y=[df[global_feature][client_id]], name=f'Current client: ID = {client_id}', mode='markers', marker=dict(color=client_color, size=15)
+        x=[df[categorical_feature][client_id]], y=[df[global_feature][client_id]],
+        name=f'Current client: ID = {client_id}', mode='markers',
+        marker=dict(color=client_color, size=15)
     ))
     fig.update_traces(text=f'Current client: ID = {client_id}', selector=dict(type='scatter'))
-    fig.update_layout(violingap=0, violinmode='overlay', title_text='Client comparison', yaxis_title=f"Global feature: {global_feature}", xaxis_title=f"Categorical feature: {categorical_feature}", xaxis_tickformat='.0f', xaxis_tickvals=list(df[categorical_feature].sort_values().unique()))
-    fig.update_layout(legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1, title=f'Categorical feature: {categorical_feature}'))
+    fig.update_layout(
+        violingap=0, violinmode='overlay', title_text='Client comparison',
+        yaxis_title=f"Global feature: {global_feature}",
+        xaxis_title=f"Categorical feature: {categorical_feature}", xaxis_tickformat='.0f',
+        xaxis_tickvals=list(df[categorical_feature].sort_values().unique())
+    )
+    fig.update_layout(legend=dict(
+        orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1,
+        title=f'Categorical feature: {categorical_feature}'
+    ))
     st.plotly_chart(fig, use_container_width=True)
 
-def plot_global_violin(df: pd.DataFrame, client_id: int):
+def plot_global_violin(df: pd.DataFrame, client_id: int) -> None:
     global_feature = df.columns[0]
     color = 'Paleturquoise'
     client_color = 'Gold'
@@ -968,13 +1113,21 @@ def plot_global_violin(df: pd.DataFrame, client_id: int):
     fig = go.Figure()
     fig.add_trace(go.Violin(
         y=df[global_feature],
-        legendgroup=global_feature, scalegroup=global_feature, name=global_feature, line_color=color, box_visible=True
+        legendgroup=global_feature, scalegroup=global_feature, name=global_feature,
+        line_color=color, box_visible=True
     ))
-    fig.update_traces(meanline_visible=True, points='all', jitter=0.2, scalemode='count', marker=dict(size=1))
+    fig.update_traces(
+        meanline_visible=True, points='all', jitter=0.2, scalemode='count', marker=dict(size=1)
+    )
     fig.add_trace(go.Scatter(
-        x=[global_feature], y=[df[global_feature][client_id]], name=f'Current client: ID = {client_id}', mode='markers', marker=dict(color=client_color, size=15)
+        x=[global_feature], y=[df[global_feature][client_id]],
+        name=f'Current client: ID = {client_id}', mode='markers',
+        marker=dict(color=client_color, size=15)
     ))
     fig.update_traces(text=f'Current client: ID = {client_id}', selector=dict(type='scatter'))
     fig.update_layout(violingap=0, violinmode='overlay', title_text='Client comparison')
-    fig.update_layout(legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1, title=f'Global feature: {global_feature}'))
+    fig.update_layout(legend=dict(
+        orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1,
+        title=f'Global feature: {global_feature}'
+    ))
     st.plotly_chart(fig, use_container_width=True)

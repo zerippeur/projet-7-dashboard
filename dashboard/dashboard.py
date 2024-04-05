@@ -184,7 +184,10 @@ with tab2:
                 index=0,
                 horizontal=True
             )
-            st.subheader(body='Global feature importance graph', divider='grey')
+            st.subheader(
+                body='Global feature importance graph',
+                divider='grey'
+            )
             display_built_in_global_feature_importance(
                 model_type=model_type,
                 nb_features=nb_features,
@@ -205,7 +208,10 @@ with tab2:
                     index=0,
                     horizontal=True
                 )
-                st.subheader(body=f'Shap {str.lower(feature_scale)} feature importance graph', divider='grey')
+                st.subheader(
+                    body=f'Shap {str.lower(feature_scale)} feature importance graph',
+                    divider='grey'
+                )
                 if feature_scale == 'Global':
                     display_shap_feature_importance(
                         client_id=st.session_state['client_id'],
@@ -334,9 +340,14 @@ with tab4:
         st.subheader(body='Data sources', divider='red')
         st.caption(
             body='This project relies on the *"Home Credit Default Risk"* kaggle project: '
-                 '<p><a href="https://www.kaggle.com/competitions/home-credit-default-risk/overview" target="_blank">Project overview</a></p>'
-                 'We used the following code from a competitor as a reference for the data engineering process: '
-                 '<p><a href="https://www.kaggle.com/code/jsaguiar/lightgbm-with-simple-features" target="_blank">Reference project</a></p>',
+                 '<p><a href='
+                 '"https://www.kaggle.com/competitions/home-credit-default-risk/overview"'
+                 ' target="_blank">Project overview</a></p>'
+                 'We used the following code from a competitor as a reference for the data '
+                 'engineering process: '
+                 '<p><a href='
+                 '"https://www.kaggle.com/code/jsaguiar/lightgbm-with-simple-features"'
+                 ' target="_blank">Reference project</a></p>',
             unsafe_allow_html=True
         )
     with st.container(border=True):
@@ -354,15 +365,15 @@ with tab4:
                 body='Initiate Shap explainer'
             )
             col2.caption(
-                body='    Send request to prediction api to initiate shap explainer and get global scale'
-                    'shap values (see tab 2).'
+                body='    Send request to prediction api to initiate shap explainer and get global'
+                    ' scale shap values (see tab 2).'
             )
             col3.markdown(
                 body='Initiate available features'
             )
             col3.caption(
-                body='    Send request to prediction api to initiate available features for client '
-                    'comparison graphs (see tab 3).'
+                body='    Send request to prediction api to initiate available features for client'
+                    ' comparison graphs (see tab 3).'
             )
             with st.container():
                 st.subheader(body='Tabs', divider='grey')
@@ -374,11 +385,11 @@ with tab4:
                 col2.subheader(body='Tab 2: Feature importance')
                 col2.caption(
                     body='Built-in and shap feature importance. Global and local scales.'
-                        'Initiate Shap explainer for shap feature importance (see sidebar section).'
-                        ' Input client ID for local scale.'
+                        'Initiate Shap explainer for shap feature importance (see sidebar section)'
+                        '. Input client ID for local scale.'
                 )
                 col3.subheader(body='Tab 3: Client comparison')
                 col3.caption(
-                    body='Compare current client with other clients using violinplots (see tab 3 for '
-                        'more details).'
+                    body='Compare current client with other clients using violinplots (see tab 3 '
+                         'for more details).'
             )

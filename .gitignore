@@ -8,3 +8,6 @@ __pycache__
 build/
 # Idem dossier build de poetry
 dist/
+
+dashboard.env
+streamlit/
