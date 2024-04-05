@@ -865,11 +865,11 @@ def fetch_cat_and_split_features(
 
     # Query the first table
     table1 = 'train_df'
-    query = f"SELECT * FROM {table1} ORDER BY RANDOM() LIMIT :limit"
-    df1 = pd.read_sql_query(query, connection, params={'limit': limit})
+    query = f"SELECT * FROM {table1} ORDER BY RANDOM() LIMIT {limit}"
+    df1 = pd.read_sql_query(query, connection)
     table2 = 'test_df'
-    query = f"SELECT * FROM {table2} ORDER BY RANDOM() LIMIT :limit"
-    df2 = pd.read_sql_query(query, connection, params={'limit': limit})
+    query = f"SELECT * FROM {table2} ORDER BY RANDOM() LIMIT {limit}"
+    df2 = pd.read_sql_query(query, connection)
     df = pd.concat([df1, df2], axis=0)
     df.drop(columns=['level_0'], inplace=True)
 
