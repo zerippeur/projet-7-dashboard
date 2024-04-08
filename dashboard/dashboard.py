@@ -111,9 +111,9 @@ valid_ids = st.sidebar.expander(
 valid_ids.write(st.session_state['valid_ids']['list'])
 
 st.sidebar.caption(
-    body='Client ID use cases:\n - 100002: SAFE (Application approved)\n'
+    body='Client ID use cases:\n - 100003: SAFE (Application approved)\n'
          ' - 100023: RISKY (Application under review by office manager)\n'
-         ' - 100003: NOPE (Application rejected)',
+         ' - 100002: NOPE (Application rejected)',
     unsafe_allow_html=True
 )
 
