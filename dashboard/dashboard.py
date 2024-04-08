@@ -3,9 +3,8 @@ import pandas as pd
 import streamlit as st
 
 # Local imports
-from dashboard_functions import get_model_threshold
-from dashboard_functions import predict_credit_risk
-from dashboard_functions import get_built_in_global_feature_importance
+from dashboard_functions import get_model_threshold, get_built_in_global_feature_importance
+from dashboard_functions import get_valid_ids, predict_credit_risk
 from dashboard_functions import display_built_in_global_feature_importance
 from dashboard_functions import initiate_shap_explainer, display_shap_feature_importance
 from dashboard_functions import update_available_features, update_violinplot_data
@@ -23,6 +22,15 @@ tab1, tab2, tab3, tab4 = st.tabs(
         ':clipboard: About'
     ]
 )
+
+if 'valid_ids' not in st.session_state:
+    st.session_state['valid_ids'] = {
+        'min': None,
+        'max': None,
+        'list': get_valid_ids()
+    }
+    st.session_state['valid_ids']['min'] = st.session_state['valid_ids']['list'][0]
+    st.session_state['valid_ids']['max'] = st.session_state['valid_ids']['list'][-1]
 
 if 'client_id' not in st.session_state:
     st.session_state['client_id'] = None
@@ -86,17 +94,26 @@ available_explainer_types = ['Built-in', 'Shap']
 
 st.session_state['client_id'] = st.sidebar.number_input(
     label='Client ID',
-    min_value=0,
-    max_value=1000000,
+    min_value=st.session_state['valid_ids']['min'],
+    max_value=st.session_state['valid_ids']['max'],
     value=None,
     step=1,
     format='%i',
     placeholder='Enter client ID'
 )
 
+valid_ids = st.sidebar.expander(
+    label=f'Valid client IDs: '
+          f'{st.session_state["valid_ids"]["min"]} - {st.session_state["valid_ids"]["max"]}',
+    expanded=False
+)
+
+valid_ids.write(st.session_state['valid_ids']['list'])
+
 st.sidebar.caption(
-    body='Client ID use cases:\n - 108567: SAFE (Credit approved)\n'
-         ' - 110084: NOPE (Credit rejected)',
+    body='Client ID use cases:\n - 100002: SAFE (Application approved)\n'
+         ' - 100023: RISKY (Application under review by office manager)\n'
+         ' - 100003: NOPE (Application rejected)',
     unsafe_allow_html=True
 )
 
@@ -128,7 +145,11 @@ with tab1:
              'and rejected (red) credit applications. Finally, we indicate a range within which '
              'the credit application needs further investigation before approval or rejection.'
     )
-    if st.session_state['client_id'] is not None:
+    if st.session_state['client_id'] is None:
+        st.warning(body='Please enter a client ID in the sidebar section.', icon="⚠️")
+    elif st.session_state['client_id'] not in st.session_state['valid_ids']['list']:
+        st.warning(body='Please enter a valid client ID (see sidebar).', icon="⚠️")
+    else:
         with st.container(border=True):
             st.subheader(body='Gauge graph', divider='red')
             predict = st.button('Predict credit risk', key='predict')
@@ -137,8 +158,6 @@ with tab1:
                     client_id=st.session_state['client_id'],
                     threshold=st.session_state['threshold']
                 )
-    else:
-        st.warning(body='Please enter a client ID in the sidebar section.', icon="⚠️")
 
 with tab2:
     st.write('Current client ID:', st.session_state['client_id'])
@@ -226,13 +245,16 @@ with tab2:
                             body='Please enter a client ID in the sidebar section.',
                             icon="⚠️"
                         )
-
+                    elif st.session_state['client_id'] not in st.session_state['valid_ids']['list']:
+                        st.warning(
+                            body='Please enter a valid client ID (see sidebar).'
+                        )
                     else:
                         display_shap_feature_importance(
                             client_id=st.session_state['client_id'],
-                            scale=feature_scale
-                        )
-                
+                            scale=feature_scale,
+                            nb_features=nb_features
+                        ) 
 
 with tab3:
     st.write('Current client ID:', st.session_state['client_id'])
@@ -250,87 +272,99 @@ with tab3:
     )
 
     if st.session_state['client_id'] is None:
+        if not st.session_state['available_features']['initiated']:
+            st.warning(
+                body='Please initiate available features in the sidebar section.',
+                icon="⚠️"
+            )
         st.warning(
             body='Please enter a client ID in the sidebar section.',
             icon="⚠️"
         )
-    if not st.session_state['available_features']['initiated']:
+    elif st.session_state['client_id'] not in st.session_state['valid_ids']['list']:
+        if not st.session_state['available_features']['initiated']:
+            st.warning(
+                body='Please initiate available features in the sidebar section.',
+                icon="⚠️"
+            )
         st.warning(
-            body='Please initiate available features in the sidebar section.',
+            body='Please enter a valid client ID (see sidebar).',
             icon="⚠️"
         )
-    if (
-        st.session_state['client_id'] is not None
-        and st.session_state['available_features']['initiated']
-    ):
-        with st.container(border=True):
-            st.session_state['tab_3_selected_importance_type'] = st.radio(
-                label="Order available features by feature importance type:",
-                options=available_importance_types,
-                index=0,
-                horizontal=True,
-                on_change=update_available_features
+    else:
+        if not st.session_state['available_features']['initiated']:
+            st.warning(
+                body='Please initiate available features in the sidebar section.',
+                icon="⚠️"
             )
-        
-        with st.container(border=True):
-            st.subheader(body='Features selectors', divider='red')
-            col1, col2, col3 = st.columns(3)
-        col1.subheader(body='Global feature', divider='grey')
-        col1.caption(body='Main feature for global comparison')
-        col1.caption(body='*y-axis scale - Mandatory*')
-
-        col2.subheader(body='Category feature', divider='grey')
-        col2.caption(body='Second feature for category')
-        col2.caption(body='*x-axis groups - Optionnal*')
-
-        col3.subheader(body='Split feature', divider='grey')
-        col3.caption(body='Third feature for categories split')
-        col3.caption(body='*violin sides - Optionnal*')
- 
-        update_available_features()
-
-        st.session_state['client_comparison']['global'] = col1.selectbox(
-            label='GLOBAL FEATURE',
-            options=[None] + st.session_state['available_features']['global_features'],
-            index=0,
-            on_change=update_available_features
-        )
-
-        if st.session_state['client_comparison']['global'] is None:
-            st.session_state['client_comparison']['categorical'] = None
-            st.session_state['client_comparison']['split'] = None
         else:
-            st.session_state['client_comparison']['categorical'] = col2.selectbox(
-                label='CATEGORICAL FEATURE',
-                options=[None] + [
-                    categorical_feature for categorical_feature
-                    in st.session_state['available_features']['categorical_features']
-                    if categorical_feature != st.session_state['client_comparison']['global']
-                ],
+            with st.container(border=True):
+                st.session_state['tab_3_selected_importance_type'] = st.radio(
+                    label="Order available features by feature importance type:",
+                    options=available_importance_types,
+                    index=0,
+                    horizontal=True,
+                    on_change=update_available_features
+                )
+
+            with st.container(border=True):
+                st.subheader(body='Features selectors', divider='red')
+                col1, col2, col3 = st.columns(3)
+            col1.subheader(body='Global feature', divider='grey')
+            col1.caption(body='Main feature for global comparison')
+            col1.caption(body='*y-axis scale - Mandatory*')
+
+            col2.subheader(body='Category feature', divider='grey')
+            col2.caption(body='Second feature for category')
+            col2.caption(body='*x-axis groups - Optionnal*')
+
+            col3.subheader(body='Split feature', divider='grey')
+            col3.caption(body='Third feature for categories split')
+            col3.caption(body='*violin sides - Optionnal*')
+    
+            update_available_features()
+
+            st.session_state['client_comparison']['global'] = col1.selectbox(
+                label='GLOBAL FEATURE',
+                options=[None] + st.session_state['available_features']['global_features'],
                 index=0,
                 on_change=update_available_features
             )
-            if st.session_state['client_comparison']['categorical'] is None:
+
+            if st.session_state['client_comparison']['global'] is None:
+                st.session_state['client_comparison']['categorical'] = None
                 st.session_state['client_comparison']['split'] = None
             else:
-                st.session_state['client_comparison']['split'] = col3.selectbox(
-                    label='SPLIT FEATURE',
+                st.session_state['client_comparison']['categorical'] = col2.selectbox(
+                    label='CATEGORICAL FEATURE',
                     options=[None] + [
-                        split_feature for split_feature
-                        in st.session_state['available_features']['split_features']
-                        if split_feature != st.session_state['client_comparison']['categorical']
+                        categorical_feature for categorical_feature
+                        in st.session_state['available_features']['categorical_features']
+                        if categorical_feature != st.session_state['client_comparison']['global']
                     ],
                     index=0,
                     on_change=update_available_features
                 )
+                if st.session_state['client_comparison']['categorical'] is None:
+                    st.session_state['client_comparison']['split'] = None
+                else:
+                    st.session_state['client_comparison']['split'] = col3.selectbox(
+                        label='SPLIT FEATURE',
+                        options=[None] + [
+                            split_feature for split_feature
+                            in st.session_state['available_features']['split_features']
+                            if split_feature != st.session_state['client_comparison']['categorical']
+                        ],
+                        index=0,
+                        on_change=update_available_features
+                    )
 
-        update_violinplot_data()
-        show_data = st.expander(label='Show selected data')
-        show_data.write(st.session_state['client_comparison']['data'])
-        display_violinplot()
+            update_violinplot_data()
+            show_data = st.expander(label='Show selected data')
+            show_data.write(st.session_state['client_comparison']['data'])
+            display_violinplot()
 
 with tab4:
-    st.write('Current client ID:', st.session_state['client_id'])
     st.header(body='Project summary', divider='red')
     st.caption(
         body='This is an OpenClassrooms project. The goal of this project is to predict the risk '

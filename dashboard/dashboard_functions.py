@@ -34,6 +34,36 @@ API_URI = os.getenv("API_URI")
 
 # COMMON FUNCTIONS
 
+# Function to get list of valid client_ids from database
+def get_valid_ids(db_uri: str=HEROKU_DATABASE_URI) -> List[int]:
+    """
+    Get list of valid client_ids from database.
+
+    Parameters:
+    -----------
+    db_uri: str
+        The database URI
+
+    Returns:
+    --------
+    List[int]
+        The list of valid client_ids
+    """
+    engine = create_engine(db_uri)
+
+    query = text(
+        'SELECT DISTINCT "SK_ID_CURR" '
+        'FROM "train_df" '
+        'UNION ALL '
+        'SELECT DISTINCT "SK_ID_CURR" '
+        'FROM "test_df"'
+    )
+    with engine.connect() as conn:
+        result = pd.read_sql_query(query, conn)
+    # sort the results in ascending order
+    result = result.sort_values(by='SK_ID_CURR', ascending=True)
+    return result['SK_ID_CURR'].tolist()
+
 # Function to get client infos from id number 
 def get_client_infos(
         client_id: int,
@@ -659,6 +689,7 @@ def get_shap_feature_importance(
     
     elif scale == 'Local' and client_id is not None:    
         client_infos = get_client_infos(client_id=client_id, output='dict')
+        st.session_state['shap']['Local']['features'] = list(client_infos.values())
         json_payload_shap_feature_importance = {
             'client_infos': client_infos,
             'feature_scale': scale
@@ -750,8 +781,7 @@ def plot_shap(
             features=features, # Use training set features
             feature_names=feature_names, #Use column names
             show=False, #Set to false to output to folder
-            max_display=nb_features) # Set max features to display
-        )
+            max_display=nb_features)) # Set max features to display
     elif scale == 'Local':
         plt.clf()
         st_shap(shap.force_plot(
@@ -759,8 +789,19 @@ def plot_shap(
             shap_values, 
             features=features,
             feature_names=feature_names,
-            show=False)
+            matplotlib=True,
+            show=False), width=1300)
+        
+        shap_df = pd.DataFrame(
+            data=shap_feature_importance_dict['shap_values'][0],
+            index=shap_feature_importance_dict['feature_names'],
+            columns=['shap_values']
         )
+        shap_df['client_values'] = st.session_state['shap'][scale]['features']
+        abs_df = shap_df.abs()
+        abs_df.sort_values(by='shap_values', ascending=False, inplace=True)
+        shap_table = st.expander("Values", expanded=False)
+        shap_table.write(shap_df.loc[abs_df.index])
 
 # Function to display shap feature importance
 def display_shap_feature_importance(
