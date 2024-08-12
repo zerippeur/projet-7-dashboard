@@ -7,7 +7,7 @@ readme = "README.md"
 
 [tool.poetry.dependencies]
 python = "^3.11"
-streamlit = "^1.29.0"
+streamlit = "^1.37.0"
 matplotlib = "^3.8.2"
 plotly = "^5.18.0"
 sqlalchemy = "^2.0.25"
